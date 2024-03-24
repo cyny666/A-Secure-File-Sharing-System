@@ -108,9 +108,18 @@ func someUsefulThings() {
 // This is the type definition for the User struct.
 // A Go struct is like a Python or Java class - it can have attributes
 // (e.g. like the Username attribute) and methods (e.g. like the StoreFile method below).
+// 这里来定义一下结构体
+type TreeNode struct {
+	Value    int
+	Children []*TreeNode
+}
 type User struct {
-	Username string
-
+	Username      string
+	Password      string
+	Private_key   userlib.PKEEncKey
+	Signature_key userlib.PKEDecKey
+	// 这里对于Intermediate Id想以树的方式来定义
+	IntermediateUUIDmap TreeNode
 	// You can add other attributes here if you want! But note that in order for attributes to
 	// be included when this struct is serialized to/from JSON, they must be capitalized.
 	// On the flipside, if you have an attribute that you want to be able to access from
@@ -118,6 +127,12 @@ type User struct {
 	// of this struct that's stored in datastore, then you can use a "private" variable (e.g. one that
 	// begins with a lowercase letter).
 }
+type FileNode struct {
+	FileContent string
+	PrevUUID int
+	NextUUID int
+}
+type Filelocator
 
 // NOTE: The following methods have toy (insecure!) implementations.
 
