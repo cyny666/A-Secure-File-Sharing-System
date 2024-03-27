@@ -130,9 +130,39 @@ type User struct {
 	// begins with a lowercase letter).
 }
 type FileNode struct {
-	FileContent string
-	PrevUUID    int
-	NextUUID    int
+	Contents []byte
+	PrevUUID uuid.UUID
+	NextUUID uuid.UUID
+}
+
+// 包含文件对应的 FileNode 地址
+type Filelocator struct {
+	FirstFileNodeUUID uuid.UUID
+	LastFileNodeUUID  uuid.UUID
+	SymKeyFn          []byte
+	MacKeyFn          []byte
+}
+
+// 文件分享接收者通过 Intermediate 获取 fileLocator 的解密密钥
+type Intermediate struct {
+	FileLocatorUUID   uuid.UUID
+	SymKeyFileLocator []byte
+	MacKeyFileLocator []byte
+}
+
+// 每个用户通过 keyFile 来打开 file
+type KeyFile struct {
+	isFileOwner bool
+	FileNode    uuid.UUID
+	SymKeyFile  []byte
+	MacKeyFile  []byte
+}
+
+// 文件分享邀请
+type Invitation struct {
+	IntermediateUUID uuid.UUID
+	SymKeyInter      []byte
+	MacKeyInter      []byte
 }
 
 // NOTE: The following methods have toy (insecure!) implementations.
