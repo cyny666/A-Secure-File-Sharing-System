@@ -20,7 +20,7 @@ import (
 
 	userlib "github.com/cs161-staff/project2-userlib"
 
-	"github.com/cs161-staff/project2-starter-code/client"
+	"A-Secure-File-Sharing-System/client"
 )
 
 func TestSetupAndExecution(t *testing.T) {

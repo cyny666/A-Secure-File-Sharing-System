@@ -114,10 +114,12 @@ type TreeNode struct {
 	Children []*TreeNode
 }
 type User struct {
-	Username      string
-	Password      string
-	Private_key   userlib.PKEEncKey
-	Signature_key userlib.PKEDecKey
+	Username string
+	Password string
+	// Private_key是用来对用户进行解密的
+	// Signature_key是用来对数据进行解密的
+	Private_key   userlib.PKEDecKey
+	Signature_key userlib.DSSignKey
 	// 这里对于Intermediate Id想以树的方式来定义
 	IntermediateUUIDmap TreeNode
 	// You can add other attributes here if you want! But note that in order for attributes to
@@ -127,49 +129,63 @@ type User struct {
 	// of this struct that's stored in datastore, then you can use a "private" variable (e.g. one that
 	// begins with a lowercase letter).
 }
-
-// 文件存储的基本单元
 type FileNode struct {
-	Contents []byte
-	PrevUUID uuid.UUID
-	NextUUID uuid.UUID
-}
-
-// 包含文件对应的 FileNode 地址
-type Filelocator struct {
-	FirstFileNodeUUID uuid.UUID
-	LastFileNodeUUID  uuid.UUID
-	SymKeyFn          []byte
-	MacKeyFn          []byte
-}
-
-// 文件分享接收者通过 Intermediate 获取 fileLocator 的解密密钥
-type Intermediate struct {
-	FileLocatorUUID   uuid.UUID
-	SymKeyFileLocator []byte
-	MacKeyFileLocator []byte
-}
-
-// 每个用户通过 keyFile 来打开 file
-type KeyFile struct {
-	isFileOwner bool
-	FileNode    uuid.UUID
-	SymKeyFile  []byte
-	MacKeyFile  []byte
-}
-
-// 文件分享邀请
-type Invitation struct {
-	IntermediateUUID uuid.UUID
-	SymKeyInter      []byte
-	MacKeyInter      []byte
+	FileContent string
+	PrevUUID    int
+	NextUUID    int
 }
 
 // NOTE: The following methods have toy (insecure!) implementations.
 
 func InitUser(username string, password string) (userdataptr *User, err error) {
+	//如果名字为空
+	if len(username) == 0 {
+		return nil, errors.New("输入的名字必须不为空")
+	}
+	// 对username进行一个SHA-512加密获取其哈希值
+	hashUsername := userlib.Hash([]byte(username))
+	// 选取前十六位作为UUID
+	userUUID, err := uuid.FromBytes(hashUsername[:16])
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	// 限制username没有重名
+	if _, ok := userlib.DatastoreGet(userUUID); ok == true {
+		return nil, errors.New("您选取的username有重复的")
+	}
+	// 创建公/私钥和签名
+	publicKey, privatekey, _ := userlib.PKEKeyGen()
+	signatureKey, verifyKey, _ := userlib.DSKeyGen()
+	// 将公私钥和签名传到KeyStore中
+	err = userlib.KeystoreSet(username+"publicKey", publicKey)
+	if err != nil {
+		return nil, errors.New("生成的公钥不可以储存到Keystore上")
+	}
+	err = userlib.KeystoreSet(username+"verfiKey", verifyKey)
+	if err != nil {
+		return nil, errors.New("签名公钥不可以储存到Ketstore上")
+	}
+	// 创建一个新User
 	var userdata User
 	userdata.Username = username
+	userdata.Password = password
+	userdata.Private_key = privatekey
+	userdata.Signature_key = signatureKey
+	userdataBytes, err := json.Marshal(userdata)
+	if err != nil {
+		return nil, errors.New("无法把用户转为byte流")
+	}
+	// 生成堆成加密密钥和消息认证密码
+	symEncKey, macKey := GenerateKeys(username, password)
+	// 生成随机向量
+	iv := userlib.RandomBytes(16)
+	newUserEncrypted := userlib.SymEnc(symEncKey, iv, userdataBytes)
+	hmacTag, err := userlib.HMACEval(macKey, newUserEncrypted)
+	if err != nil {
+		return nil, errors.New("消息认证码不对")
+	}
+	userlib.DatastoreSet(userUUID, append(newUserEncrypted, hmacTag...))
 	return &userdata, nil
 }
 
