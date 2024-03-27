@@ -1,4 +1,4 @@
-module github.com/cs161-staff/project2-starter-code
+module A-Secure-File-Sharing-System
 
 go 1.20
 

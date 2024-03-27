@@ -11,3 +11,8 @@
 
 
 
+一些实现的细节（可以补充）：
+
+user的uuid的生成方式: hash([]byte(username)) -> [:16] -> uuid.FromBytes
+
+然后公钥存储Keystore的方式 : eystoreSet(username+"publicKey", publicKey)
