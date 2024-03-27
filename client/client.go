@@ -109,8 +109,8 @@ func someUsefulThings() {
 // A Go struct is like a Python or Java class - it can have attributes
 // (e.g. like the Username attribute) and methods (e.g. like the StoreFile method below).
 type User struct {
-	Username string
-
+	Username     string
+	PasswordHash []byte
 	// You can add other attributes here if you want! But note that in order for attributes to
 	// be included when this struct is serialized to/from JSON, they must be capitalized.
 	// On the flipside, if you have an attribute that you want to be able to access from
@@ -122,8 +122,17 @@ type User struct {
 // NOTE: The following methods have toy (insecure!) implementations.
 
 func InitUser(username string, password string) (userdataptr *User, err error) {
+	// username is empty or not
+	if username == "" {
+		return nil, errors.New("username is empty")
+	}
+	// A user with the same username exists
+	
 	var userdata User
+	// username
 	userdata.Username = username
+	// password
+	userdata.PasswordHash = userlib.Argon2Key([]byte(password), []byte(username), 32) // salt: username;	keyLen: 32
 	return &userdata, nil
 }
 
