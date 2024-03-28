@@ -136,7 +136,7 @@ type FileNode struct {
 }
 
 // 包含文件对应的 FileNode 地址
-type Filelocator struct {
+type FileLocator struct {
 	FirstFileNodeUUID uuid.UUID
 	LastFileNodeUUID  uuid.UUID
 	SymKeyFn          []byte
@@ -153,7 +153,7 @@ type Intermediate struct {
 // 每个用户通过 keyFile 来打开 file
 type KeyFile struct {
 	isFileOwner bool
-	FileNode    uuid.UUID
+	FileUUID    uuid.UUID
 	SymKeyFile  []byte
 	MacKeyFile  []byte
 }
