@@ -192,7 +192,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	if err != nil {
 		return nil, errors.New("生成的公钥不可以储存到Keystore上")
 	}
-	err = userlib.KeystoreSet(username+"verfiKey", verifyKey)
+	err = userlib.KeystoreSet(username+"verfyKey", verifyKey)
 	if err != nil {
 		return nil, errors.New("签名公钥不可以储存到Ketstore上")
 	}
@@ -210,6 +210,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	symEncKey, macKey := GenerateKeys(username, password)
 	// 生成随机向量
 	iv := userlib.RandomBytes(16)
+	// 将数据加密
 	newUserEncrypted := userlib.SymEnc(symEncKey, iv, userdataBytes)
 	hmacTag, err := userlib.HMACEval(macKey, newUserEncrypted)
 	if err != nil {
@@ -221,8 +222,46 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
-	userdataptr = &userdata
-	return userdataptr, nil
+	// 对username进行一个SHA-512加密获取其哈希值
+	hashUsername := userlib.Hash([]byte(username))
+	// 选取前十六位作为UUID
+	userUUID, err := uuid.FromBytes(hashUsername[:16])
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	// 查找Datastore中是否存储有该userUUID
+	if _, ok := userlib.DatastoreGet(userUUID); ok == false {
+		return nil, errors.New("您选取的username不存在")
+	}
+	// 获取Datastore中存储的加密的数据
+	data, ok := userlib.DatastoreGet(userUUID)
+	if ok != true {
+		return nil, errors.New("找不到Datastore中的数据")
+	}
+	// 分理出newUserEncryted 和hamcTag
+	newUserEncryted := data[:len(data)-64]
+	hmacTag := data[len(data)-64:]
+	// 来验证hmacTag是否一样
+	// 生成堆成加密密钥和消息认证密码
+	symEncKey, macKey := GenerateKeys(username, password)
+	hmacTagVerify, hmacError := userlib.HMACEval(macKey, newUserEncryted)
+	if hmacError != nil {
+		return nil, errors.New("输入的秘钥应为16byte")
+	}
+	// 判断password是否正确
+	if !userlib.HMACEqual(hmacTagVerify, hmacTag) {
+		return nil, errors.New("数据被修改或者密码错误")
+	}
+	//解密数据
+	UserBytes_jsoned := userlib.SymDec(symEncKey, newUserEncryted)
+
+	err_Marshal := json.Unmarshal(UserBytes_jsoned, &userdata)
+	if err != nil {
+		return nil, err_Marshal
+	}
+
+	return &userdata, nil
 }
 
 func (userdata *User) StoreFile(filename string, content []byte) (err error) {
