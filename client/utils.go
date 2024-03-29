@@ -3,7 +3,6 @@ package client
 import (
 	"encoding/json"
 	"errors"
-
 	"fmt"
 
 	userlib "github.com/cs161-staff/project2-userlib"
@@ -117,16 +116,16 @@ func EncFileNode(sym []byte, mac []byte, content []byte, nodeUUID uuid.UUID, pre
 	// 加密 fileNodeByte
 	symEncKey, hmacKey := GenerateKeys(string(sym[:])+string(nodeUUID[:]), string(mac[:])+string(nodeUUID[:]))
 	iv := userlib.RandomBytes(16)
-	newFileNodeEncryped := userlib.SymEnc(symEncKey, iv, newNodeBytes)
+	newFileNodeEncrypted := userlib.SymEnc(symEncKey, iv, newNodeBytes)
 
 	// 使用加密的fileNode生成hmac
-	hmacTag, hmacError := userlib.HMACEval(hmacKey, newFileNodeEncryped)
+	hmacTag, hmacError := userlib.HMACEval(hmacKey, newFileNodeEncrypted)
 	if hmacError != nil {
 		return errors.New("input as key for hmac should be a 16-byte key")
 	}
 
 	// 将加密的FileNode和hamcTag存储到datastore中
-	userlib.DatastoreSet(nodeUUID, append(newFileNodeEncryped, hmacTag...))
+	userlib.DatastoreSet(nodeUUID, append(newFileNodeEncrypted, hmacTag...))
 
 	return nil
 }
