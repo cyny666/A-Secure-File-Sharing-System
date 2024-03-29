@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"fmt"
+
 	userlib "github.com/cs161-staff/project2-userlib"
 	"github.com/google/uuid"
 )
@@ -103,9 +105,9 @@ func EncFileLocator(symKeyFL []byte, macKeyFL []byte, fileLocatorUUID uuid.UUID,
 }
 
 // 创建 FileNode 结构体，并上传到 datastore
-func EncFileNode(sym []byte, mac []byte, content [], nodeUUID uuid.UUID, prevUUID uuid.UUID, nextUUID uuid.UUID) (err error) {
+func EncFileNode(sym []byte, mac []byte, content []byte, nodeUUID uuid.UUID, prevUUID uuid.UUID, nextUUID uuid.UUID) (err error) {
 	// 创建 FileNode 结构体
-	newNode := FileNode(content, prevUUID, nextUUID)
+	newNode := FileNode{content, prevUUID, nextUUID}
 	// json序列化转化为字节
 	newNodeBytes, errMarshal := json.Marshal(newNode)
 	if errMarshal != nil {
@@ -115,7 +117,7 @@ func EncFileNode(sym []byte, mac []byte, content [], nodeUUID uuid.UUID, prevUUI
 	// 加密 fileNodeByte
 	symEncKey, hmacKey := GenerateKeys(string(sym[:])+string(nodeUUID[:]), string(mac[:])+string(nodeUUID[:]))
 	iv := userlib.RandomBytes(16)
-	newFileNodeEncrypted := userlib.SymEnc(symEncKey, iv, newNodeBytes)
+	newFileNodeEncryped := userlib.SymEnc(symEncKey, iv, newNodeBytes)
 
 	// 使用加密的fileNode生成hmac
 	hmacTag, hmacError := userlib.HMACEval(hmacKey, newFileNodeEncryped)
@@ -271,6 +273,7 @@ func (userdata *User) EncKeyFile(filename string, isFileOwner bool, fileUUID uui
 
 	return nil
 }
+
 // 验证并解密获取 KeyFile
 func (userdata *User) VerifyThenDecKeyFile(filename string) (keyfilePtr *KeyFile, err error) {
 	// 根据 username + filename 获取 keyFileUUID
