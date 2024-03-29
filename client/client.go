@@ -130,7 +130,7 @@ type User struct {
 	// begins with a lowercase letter).
 }
 type FileNode struct {
-	Contents []byte
+	// 定义一下前面的UUID和后面的UUID（有点像队列）
 	PrevUUID uuid.UUID
 	NextUUID uuid.UUID
 }
@@ -185,6 +185,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 		return nil, errors.New("您选取的username有重复的")
 	}
 	// 创建公/私钥和签名
+	// 这里的公私钥可以用来解密Invitation
 	publicKey, privatekey, _ := userlib.PKEKeyGen()
 	signatureKey, verifyKey, _ := userlib.DSKeyGen()
 	// 将公私钥和签名传到KeyStore中
@@ -206,13 +207,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	if err != nil {
 		return nil, errors.New("无法把用户转为byte流")
 	}
-	// 生成堆成加密密钥和消息认证密码
-	symEncKey, macKey := GenerateKeys(username, password)
-	// 生成随机向量
-	iv := userlib.RandomBytes(16)
-	// 将数据加密
-	newUserEncrypted := userlib.SymEnc(symEncKey, iv, userdataBytes)
-	hmacTag, err := userlib.HMACEval(macKey, newUserEncrypted)
+	hmacTag, newUserEncrypted, err := userdata.GenerateHmacTag(userdataBytes)
 	if err != nil {
 		return nil, errors.New("消息认证码不对")
 	}
@@ -265,15 +260,35 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 }
 
 func (userdata *User) StoreFile(filename string, content []byte) (err error) {
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+	//定义一个FileLocator
+	var filelocator FileLocator
+	// 生成文件的ID
+	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
+	filelocator.FirstFileNodeUUID = storageKey
+	filelocator.LastFileNodeUUID = storageKey
 	if err != nil {
 		return err
 	}
+	// 将content json序列化
 	contentBytes, err := json.Marshal(content)
 	if err != nil {
 		return err
 	}
-	userlib.DatastoreSet(storageKey, contentBytes)
+	PublicKey, ok := userlib.KeystoreGet(userdata.Username + "publicKey")
+	if ok != true {
+		return errors.New("用户的公钥丢失了")
+	}
+	// 对ciphertext用RSA进行加密
+	ciphertext, err := userlib.PKEEnc(PublicKey, contentBytes)
+	hmacTag, newUserEncrypted, err := userdata.GenerateHmacTag(ciphertext)
+	if err != nil {
+		return err
+	}
+	// 查找Datastore中是否存储有该userUUID
+	if _, ok := userlib.DatastoreGet(storageKey); ok == false {
+		return errors.New("您已经储存过该文件")
+	}
+	userlib.DatastoreSet(storageKey, append(newUserEncrypted, hmacTag...))
 	return
 }
 
