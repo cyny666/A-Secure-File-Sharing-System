@@ -257,7 +257,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	UserBytes_jsoned := userlib.SymDec(symEncKey, newUserEncryted)
 
 	err_Marshal := json.Unmarshal(UserBytes_jsoned, &userdata)
-	if err != nil {
+	if err_Marshal != nil {
 		return nil, err_Marshal
 	}
 
