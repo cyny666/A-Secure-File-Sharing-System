@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// 这里要写一个shell的界面以方便用户交互
 func main() {
 	user1, erro := client.InitUser("cyny666", "123456")
 	if erro != nil {
