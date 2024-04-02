@@ -1,10 +1,8 @@
 package client
 
 import (
-	"encoding/json"
 	"errors"
 	userlib "github.com/cs161-staff/project2-userlib"
-	"github.com/google/uuid"
 )
 
 // 用Argon2算法生成密钥
@@ -33,72 +31,4 @@ func (userdata *User) GenerateHmacTag(content []byte) (hmacTag []byte, ciphertex
 		return nil, nil, errors.New("生成哈希认证码失败")
 	}
 	return hmac_Tag, newUserEncrypted, nil
-}
-
-// 用来解密filelocator
-func (userdata *User) DecryptFilelocator(filename string) (filelocator FileLocator, err error) {
-	// 获取一下该文件的storageKey
-	storageKey, _ := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
-	// 获取对应的data
-	data, ok := userlib.DatastoreGet(storageKey)
-	if ok != true {
-		return filelocator, errors.New("没找到该文件")
-	}
-	// 分理出newUserEncryted 和hamcTag
-	newUserEncryted := data[:len(data)-64]
-	hmacTag := data[len(data)-64:]
-	// 来验证hmacTag是否一样
-	// 生成堆成加密密钥和消息认证密码
-	symEncKey, macKey := GenerateKeys(userdata.Username, userdata.Password)
-	hmacTagVerify, hmacError := userlib.HMACEval(macKey, newUserEncryted)
-	if hmacError != nil {
-		return filelocator, errors.New("哈希消息认证失败")
-	}
-	if !userlib.HMACEqual(hmacTagVerify, hmacTag) {
-		return filelocator, errors.New("数据被修改或者密码错误")
-	}
-	//先解密数据
-	Filelocator_jsoned := userlib.SymDec(symEncKey, newUserEncryted)
-	//用私钥解密数据
-	filelocator_data, err := userlib.PKEDec(userdata.Private_key, Filelocator_jsoned)
-	if err != nil {
-		return filelocator, err
-	}
-	var filelocator_1 FileLocator
-	//获取filelocator
-	err_Marshal := json.Unmarshal(filelocator_data, &filelocator_1)
-	if err_Marshal != nil {
-		return filelocator, err_Marshal
-	}
-	return filelocator_1, nil
-}
-
-// 将相应的filelocator存储到Datastore里面
-func (userdata *User) StoreFilelocator(filelocator FileLocator, filename string) (err error) {
-	// 生成filelocator的ID
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
-	// 把文件存入filenode中
-	if err != nil {
-		return err
-	}
-	// 将content json序列化
-	contentBytes, err := json.Marshal(filelocator)
-	PublicKey, ok := userlib.KeystoreGet(userdata.Username + "publicKey")
-	if ok != true {
-		return errors.New("用户的公钥丢失了")
-	}
-	// 对locator_ciphertext用RSA进行加密
-	ciphertext, err := userlib.PKEEnc(PublicKey, contentBytes)
-	hmacTag, newUserEncrypted, err := userdata.GenerateHmacTag(ciphertext)
-	if err != nil {
-		return err
-	}
-	// 查找Datastore中是否存储有该userUUID
-	if _, ok := userlib.DatastoreGet(storageKey); ok == false {
-		return errors.New("您已经储存过该文件")
-	}
-	// 将哈希消息认证码和LocatorContent存储到这里
-	newUserEncrypted = append(newUserEncrypted, hmacTag...)
-	userlib.DatastoreSet(storageKey, newUserEncrypted)
-	return nil
 }
