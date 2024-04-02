@@ -22,9 +22,6 @@ import (
 
 	// hex.EncodeToString(...) is useful for converting []byte to string
 
-	// Useful for string manipulation
-	"strings"
-
 	// Useful for formatting strings (e.g. `fmt.Sprintf`).
 	"fmt"
 
@@ -110,10 +107,8 @@ func someUsefulThings() {
 // (e.g. like the Username attribute) and methods (e.g. like the StoreFile method below).
 // 这里来定义一下结构体
 type TreeNode struct {
-	Value    uuid.UUID
+	Value    int
 	Children []*TreeNode
-	Friend   []uuid.UUID
-	Father   *TreeNode
 }
 type User struct {
 	Username string
@@ -133,24 +128,23 @@ type User struct {
 }
 type FileNode struct {
 	// 定义一下前面的UUID和后面的UUID（有点像队列）
+	UUID     uuid.UUID
 	PrevUUID uuid.UUID
 	NextUUID uuid.UUID
+	Content  []byte
 }
 
 // 包含文件对应的 FileNode 地址
 type FileLocator struct {
-	FirstFileNodeUUID uuid.UUID
-	LastFileNodeUUID  uuid.UUID
-	SymKeyFn          []byte
-	MacKeyFn          []byte
+	FileNodeUUIDs []uuid.UUID
+	SymKeyFn      []byte
 }
 
-// 文件分享结构体，键值为filename+文件拥有者UUID,为了与文件存贮位置区分开
-type Invitationfile struct {
-	InvitationID   uuid.UUID //分享验证码
-	InvitationTree *TreeNode
-	SymKeyFile     []byte
-	MacKeyFile     []byte
+// 文件分享接收者通过 Intermediate 获取 fileLocator 的解密密钥
+type Intermediate struct {
+	FileLocatorUUID   uuid.UUID
+	SymKeyFileLocator []byte
+	MacKeyFileLocator []byte
 }
 
 // 每个用户通过 keyFile 来打开 file
@@ -159,6 +153,13 @@ type KeyFile struct {
 	FileUUID    uuid.UUID
 	SymKeyFile  []byte
 	MacKeyFile  []byte
+}
+
+// 文件分享邀请
+type Invitation struct {
+	IntermediateUUID uuid.UUID
+	SymKeyInter      []byte
+	MacKeyInter      []byte
 }
 
 // NOTE: The following methods have toy (insecure!) implementations.
@@ -248,7 +249,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	UserBytes_jsoned := userlib.SymDec(symEncKey, newUserEncryted)
 
 	err_Marshal := json.Unmarshal(UserBytes_jsoned, &userdata)
-	if err_Marshal != nil {
+	if err != nil {
 		return nil, err_Marshal
 	}
 
@@ -258,128 +259,121 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 	//定义一个FileLocator
 	var filelocator FileLocator
-	// 生成文件的ID
+	var filenode FileNode
+	// 生成filenode的UUID
+	filenode.UUID = uuid.New()
+	filenode.Content = content
+	// 生成filelocator的ID
 	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
-	filelocator.FirstFileNodeUUID = storageKey
-	filelocator.LastFileNodeUUID = storageKey
+	filelocator.FileNodeUUIDs = append(filelocator.FileNodeUUIDs, filenode.UUID)
+	// 把文件存入filenode中
 	if err != nil {
 		return err
 	}
 	// 将content json序列化
-	contentBytes, err := json.Marshal(content)
+	contentBytes, err := json.Marshal(filelocator)
 	if err != nil {
 		return err
 	}
+	filenode_content, err := json.Marshal(filenode)
+	if err != nil {
+		return err
+	}
+	hmacTag_filenode, newUserEncrypted, err := userdata.GenerateHmacTag(filenode_content)
+	if err != nil {
+		return err
+	}
+	// 把filenode的content存储到filenode的UUID上
+	userlib.DatastoreSet(filenode.UUID, append(newUserEncrypted, hmacTag_filenode...))
 	PublicKey, ok := userlib.KeystoreGet(userdata.Username + "publicKey")
 	if ok != true {
 		return errors.New("用户的公钥丢失了")
 	}
-	// 对ciphertext用RSA进行加密
+	// 对locator_ciphertext用RSA进行加密
 	ciphertext, err := userlib.PKEEnc(PublicKey, contentBytes)
-	hmacTag, newUserEncrypted, err := userdata.GenerateHmacTag(ciphertext)
+	hmacTag, newUserEncrypted_filelocator, err := userdata.GenerateHmacTag(ciphertext)
 	if err != nil {
 		return err
 	}
 	// 查找Datastore中是否存储有该userUUID
-	if _, ok := userlib.DatastoreGet(storageKey); ok == false {
+	if _, ok := userlib.DatastoreGet(storageKey); ok == true {
 		return errors.New("您已经储存过该文件")
 	}
-	userlib.DatastoreSet(storageKey, append(newUserEncrypted, hmacTag...))
+	// 将哈希消息认证码和LocatorContent存储到这里
+	newUserEncrypted_filelocator = append(newUserEncrypted_filelocator, hmacTag...)
+	userlib.DatastoreSet(storageKey, newUserEncrypted_filelocator)
 	return
 }
 
 func (userdata *User) AppendToFile(filename string, content []byte) error {
+	// 定义一个filenode来储存append的文件
+	var filelocator FileLocator
+	var filenode FileNode
+	filelocator, err := userdata.DecryptFilelocator(filename)
+	if err != nil {
+		return err
+	}
+	// 生成一个新的filenodeUUID
+	filenode.UUID = uuid.New()
+	filelocator.FileNodeUUIDs = append(filelocator.FileNodeUUIDs, filenode.UUID)
+	// 将filelocator重新存储到数据库
+	userdata.StoreFilelocator(filelocator, filename)
+	filenode.Content = content
+	// 将filenode数据marshal
+	filenodeBytes, err := json.Marshal(filenode)
+	if err != nil {
+		return err
+	}
+	// 生成一个hash认证码
+	hmacTag_filenode, EncryptedBytes, err := userdata.GenerateHmacTag(filenodeBytes)
+	// 把filenode的content存储到filenode的UUID上
+	userlib.DatastoreSet(filenode.UUID, append(EncryptedBytes, hmacTag_filenode...))
 	return nil
 }
 
 func (userdata *User) LoadFile(filename string) (content []byte, err error) {
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+
+	filelocator, err := userdata.DecryptFilelocator(filename)
 	if err != nil {
 		return nil, err
 	}
-	dataJSON, ok := userlib.DatastoreGet(storageKey)
-	if !ok {
-		return nil, errors.New(strings.ToTitle("file not found"))
+	for _, UUID := range filelocator.FileNodeUUIDs {
+		var filenode FileNode
+		filenode_data, ok := userlib.DatastoreGet(UUID)
+		if ok != true {
+			return nil, errors.New("文件节点不对")
+		}
+		// 分理出newUserEncryted 和hamcTag
+		newUserEncryted := filenode_data[:len(filenode_data)-64]
+		hmacTag := filenode_data[len(filenode_data)-64:]
+		// 来验证hmacTag是否一样
+		// 生成堆成加密密钥和消息认证密码
+		symEncKey, macKey := GenerateKeys(userdata.Username, userdata.Password)
+		hmacTagVerify, hmacError := userlib.HMACEval(macKey, newUserEncryted)
+		if hmacError != nil {
+			return nil, errors.New("哈希消息认证失败")
+		}
+		if !userlib.HMACEqual(hmacTagVerify, hmacTag) {
+			return nil, errors.New("数据被修改或者密码错误")
+		}
+		//RSA解密数据
+		Filenode_jsoned := userlib.SymDec(symEncKey, newUserEncryted)
+		//获取filenode
+		err_Marshal := json.Unmarshal(Filenode_jsoned, &filenode)
+		if err_Marshal != nil {
+			return nil, errors.New("UnMarshal失败")
+		}
+		content = append(content, filenode.Content...)
 	}
-	err = json.Unmarshal(dataJSON, &content)
 	return content, err
 }
 
 func (userdata *User) CreateInvitation(filename string, recipientUsername string) (
 	invitationPtr uuid.UUID, err error) {
-	//生成userdata的UUID
-	hashUsername := userlib.Hash([]byte(userdata.Username))
-	userdataUUID, err := uuid.FromBytes(hashUsername[:16])
-	if err != nil {
-		return uuid.Nil, err
-	}
-	//生成recipientUsername的UUID
-	hashrecipientUsername := userlib.Hash([]byte(recipientUsername))
-	recipientUsernameUUID, err := uuid.FromBytes(hashrecipientUsername[:16])
-	if err != nil {
-		return uuid.Nil, err
-	}
-	//生成filename的ID
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
-	if err != nil {
-		return uuid.Nil, err
-	}
-	//文件不存在
-	if _, ok := userlib.DatastoreGet(storageKey); ok != true {
-		return uuid.Nil, errors.New("文件不存在")
-	}
-	//被邀请用户名为空
-	if len(recipientUsername) == 0 {
-		return uuid.Nil, errors.New("被邀请用户名不能为空")
-	}
-	//邀请的用户不存在
-	if _, ok := userlib.DatastoreGet(recipientUsernameUUID); ok != true {
-		return uuid.Nil, errors.New("邀请的用户不存在")
-	}
-	//创建邀请码
-	invitationPtr = uuid.New()
-	//创建Invitationfile
-	var invitationdata Invitationfile
-	//生成Invitationfile的ID
-	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
-	if err != nil {
-		return uuid.Nil, err
-	}
-	invitationdata.InvitationID = invitationPtr
-	// 创建分享树
-	root := &TreeNode{}
-	root.Father = nil
-	root.Value = userdataUUID
-	root.Friend = append(root.Friend, recipientUsernameUUID)
-	invitationdata.InvitationTree = root
-	//存储Invitationfile
-	invitationdataBytes, err := json.Marshal(invitationdata)
-	if err != nil {
-		return uuid.Nil, errors.New("无法把用户转为byte流")
-	}
-	userlib.DatastoreSet(InvitationIDdata, invitationdataBytes)
-	return invitationPtr, nil
+	return
 }
 
 func (userdata *User) AcceptInvitation(senderUsername string, invitationPtr uuid.UUID, filename string) error {
-	//生成userdata的UUID
-	hashsenderUsername := userlib.Hash([]byte(senderUsername))
-	senderUsernamedataUUID, err := uuid.FromBytes(hashsenderUsername[:16])
-	if err != nil {
-		return err
-	}
-	if _, ok := userlib.DatastoreGet(senderUsernamedataUUID); ok != true {
-		return errors.New("分享的用户不存在")
-	}
-	//生成filename的ID
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
-	if err != nil {
-		return err
-	}
-	//文件不存在
-	if _, ok := userlib.DatastoreGet(storageKey); ok != true {
-		return errors.New("文件不存在")
-	}
 	return nil
 }
 
