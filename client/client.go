@@ -22,9 +22,6 @@ import (
 
 	// hex.EncodeToString(...) is useful for converting []byte to string
 
-	// Useful for string manipulation
-	"strings"
-
 	// Useful for formatting strings (e.g. `fmt.Sprintf`).
 	"fmt"
 
@@ -131,16 +128,16 @@ type User struct {
 }
 type FileNode struct {
 	// 定义一下前面的UUID和后面的UUID（有点像队列）
+	UUID     uuid.UUID
 	PrevUUID uuid.UUID
 	NextUUID uuid.UUID
+	Content  []byte
 }
 
 // 包含文件对应的 FileNode 地址
 type FileLocator struct {
-	FirstFileNodeUUID uuid.UUID
-	LastFileNodeUUID  uuid.UUID
-	SymKeyFn          []byte
-	MacKeyFn          []byte
+	FileNodeUUIDs []uuid.UUID
+	SymKeyFn      []byte
 }
 
 // 文件分享接收者通过 Intermediate 获取 fileLocator 的解密密钥
@@ -262,50 +259,112 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, content []byte) (err error) {
 	//定义一个FileLocator
 	var filelocator FileLocator
-	// 生成文件的ID
+	var filenode FileNode
+	// 生成filenode的UUID
+	filenode.UUID = uuid.New()
+	filenode.Content = content
+	// 生成filelocator的ID
 	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
-	filelocator.FirstFileNodeUUID = storageKey
-	filelocator.LastFileNodeUUID = storageKey
+	filelocator.FileNodeUUIDs = append(filelocator.FileNodeUUIDs, filenode.UUID)
+	// 把文件存入filenode中
 	if err != nil {
 		return err
 	}
 	// 将content json序列化
-	contentBytes, err := json.Marshal(content)
+	contentBytes, err := json.Marshal(filelocator)
 	if err != nil {
 		return err
 	}
+	filenode_content, err := json.Marshal(filenode)
+	if err != nil {
+		return err
+	}
+	hmacTag_filenode, newUserEncrypted, err := userdata.GenerateHmacTag(filenode_content)
+	if err != nil {
+		return err
+	}
+	// 把filenode的content存储到filenode的UUID上
+	userlib.DatastoreSet(filenode.UUID, append(newUserEncrypted, hmacTag_filenode...))
 	PublicKey, ok := userlib.KeystoreGet(userdata.Username + "publicKey")
 	if ok != true {
 		return errors.New("用户的公钥丢失了")
 	}
-	// 对ciphertext用RSA进行加密
+	// 对locator_ciphertext用RSA进行加密
 	ciphertext, err := userlib.PKEEnc(PublicKey, contentBytes)
-	hmacTag, newUserEncrypted, err := userdata.GenerateHmacTag(ciphertext)
+	hmacTag, newUserEncrypted_filelocator, err := userdata.GenerateHmacTag(ciphertext)
 	if err != nil {
 		return err
 	}
 	// 查找Datastore中是否存储有该userUUID
-	if _, ok := userlib.DatastoreGet(storageKey); ok == false {
+	if _, ok := userlib.DatastoreGet(storageKey); ok == true {
 		return errors.New("您已经储存过该文件")
 	}
-	userlib.DatastoreSet(storageKey, append(newUserEncrypted, hmacTag...))
+	// 将哈希消息认证码和LocatorContent存储到这里
+	newUserEncrypted_filelocator = append(newUserEncrypted_filelocator, hmacTag...)
+	userlib.DatastoreSet(storageKey, newUserEncrypted_filelocator)
 	return
 }
 
 func (userdata *User) AppendToFile(filename string, content []byte) error {
+	// 定义一个filenode来储存append的文件
+	var filelocator FileLocator
+	var filenode FileNode
+	filelocator, err := userdata.DecryptFilelocator(filename)
+	if err != nil {
+		return err
+	}
+	// 生成一个新的filenodeUUID
+	filenode.UUID = uuid.New()
+	filelocator.FileNodeUUIDs = append(filelocator.FileNodeUUIDs, filenode.UUID)
+	// 将filelocator重新存储到数据库
+	userdata.StoreFilelocator(filelocator, filename)
+	filenode.Content = content
+	// 将filenode数据marshal
+	filenodeBytes, err := json.Marshal(filenode)
+	if err != nil {
+		return err
+	}
+	// 生成一个hash认证码
+	hmacTag_filenode, EncryptedBytes, err := userdata.GenerateHmacTag(filenodeBytes)
+	// 把filenode的content存储到filenode的UUID上
+	userlib.DatastoreSet(filenode.UUID, append(EncryptedBytes, hmacTag_filenode...))
 	return nil
 }
 
 func (userdata *User) LoadFile(filename string) (content []byte, err error) {
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+
+	filelocator, err := userdata.DecryptFilelocator(filename)
 	if err != nil {
 		return nil, err
 	}
-	dataJSON, ok := userlib.DatastoreGet(storageKey)
-	if !ok {
-		return nil, errors.New(strings.ToTitle("file not found"))
+	for _, UUID := range filelocator.FileNodeUUIDs {
+		var filenode FileNode
+		filenode_data, ok := userlib.DatastoreGet(UUID)
+		if ok != true {
+			return nil, errors.New("文件节点不对")
+		}
+		// 分理出newUserEncryted 和hamcTag
+		newUserEncryted := filenode_data[:len(filenode_data)-64]
+		hmacTag := filenode_data[len(filenode_data)-64:]
+		// 来验证hmacTag是否一样
+		// 生成堆成加密密钥和消息认证密码
+		symEncKey, macKey := GenerateKeys(userdata.Username, userdata.Password)
+		hmacTagVerify, hmacError := userlib.HMACEval(macKey, newUserEncryted)
+		if hmacError != nil {
+			return nil, errors.New("哈希消息认证失败")
+		}
+		if !userlib.HMACEqual(hmacTagVerify, hmacTag) {
+			return nil, errors.New("数据被修改或者密码错误")
+		}
+		//RSA解密数据
+		Filenode_jsoned := userlib.SymDec(symEncKey, newUserEncryted)
+		//获取filenode
+		err_Marshal := json.Unmarshal(Filenode_jsoned, &filenode)
+		if err_Marshal != nil {
+			return nil, errors.New("UnMarshal失败")
+		}
+		content = append(content, filenode.Content...)
 	}
-	err = json.Unmarshal(dataJSON, &content)
 	return content, err
 }
 
