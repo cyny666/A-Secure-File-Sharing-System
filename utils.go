@@ -3,6 +3,7 @@ package main
 import (
 	"A-Secure-File-Sharing-System/client"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 
@@ -11,13 +12,10 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/google/uuid"
 )
 
-const preferenceCurrentTutorial = "currentTutorial"
-
-var topWindow fyne.Window
-
-// 登陆界面
+// 登陆界面（返回所创建的Window)
 func makeLogin_returnWindow() (fyne.Window, error) {
 	app := fyne.CurrentApp()
 	// 登陆窗口
@@ -71,38 +69,13 @@ func makeLogin_returnWindow() (fyne.Window, error) {
 
 }
 
+// 登陆界面（不返回所创建的Window)
 func makeLogin() error {
 	_, err := makeLogin_returnWindow()
 	return err
 }
 
-// func makeLogin_v2(app fyne.App) error {
-// 	// 登陆窗口
-// 	loginWidget := app.NewWindow("LogIn")
-// 	// 创建登录界面的代码
-// 	// 包括用户名、密码输入框、登录按钮等
-// 	username := widget.NewEntry()
-// 	username.SetPlaceHolder("John Smith")
-// 	password := widget.NewPasswordEntry()
-// 	password.SetPlaceHolder("Password")
-// 	loginButton := widget.NewButton("click me", func() {
-// 		if authenticate(username.Text, password.Text) {
-// 			loginWidget.Close()
-// 			showMainWindow(app,)
-// 		} else {
-// 			dialog.ShowError(errors.New("invalid username or password"), loginWidget)
-// 		}
-// 	})
-
-// 	content := container.New(layout.NewVBoxLayout(), username, password, layout.NewSpacer(), loginButton)
-// 	loginWidget.SetContent(container.New(layout.NewVBoxLayout(), content))
-// 	// loginWidget.SetContent(content)
-// 	loginWidget.Resize(fyne.NewSize(340, 460))
-// 	loginWidget.Show()
-// 	return nil
-// }
-
-// 注册界面
+// 注册按钮
 func makeRegisterButton(win fyne.Window) *widget.Button {
 	registerButton := widget.NewButton("Register", func() {
 		// 关闭当前登陆界面，加载注册界面
@@ -204,7 +177,7 @@ func showMainWindow(app fyne.App, User *client.User) {
 
 	w := app.NewWindow("test")
 
-	w.Resize(fyne.NewSize(640, 460)) // 重置窗口大小
+	w.Resize(fyne.NewSize(600, 350)) // 重置窗口大小
 
 	// newNav := makeNav()
 	// w.SetContent(newNav)
@@ -222,13 +195,17 @@ func makeTabs(win fyne.Window, User *client.User) fyne.CanvasObject {
 	// StoreFileButtion := makeDialogOpenFileButton(win)
 	StoreFile := makeStoreFile(win, User)
 	LoadFile := makeLoadFile(win, User)
+	AppendToFile := makeAppendToFile(win, User)
+	CreateInvitaion := makeCreateInvitation(win, User)
+	AcceptInvitation := makeAcceptInvitation(win, User)
+	revokeAccess := makeRevokeAccess(win, User)
 	tabs := container.NewAppTabs(
 		container.NewTabItem("StoreFile", StoreFile),
 		container.NewTabItem("LoadFile", LoadFile),
-		container.NewTabItem("AppendToFile", widget.NewLabel("AppendToFile")),
-		container.NewTabItem("CreateInvitation", widget.NewLabel("CreateInvitation")),
-		container.NewTabItem("AcceptInvitation", widget.NewLabel("AcceptInvitation")),
-		container.NewTabItem("RevokeAccess", widget.NewLabel("RevokeAccess")),
+		container.NewTabItem("AppendToFile", AppendToFile),
+		container.NewTabItem("CreateInvitation", CreateInvitaion),
+		container.NewTabItem("AcceptInvitation", AcceptInvitation),
+		container.NewTabItem("RevokeAccess", revokeAccess),
 	)
 
 	//tabs.Append(container.NewTabItemWithIcon("Home", theme.HomeIcon(), widget.NewLabel("Home tab")))
@@ -266,49 +243,70 @@ func makeDialogOpenFileButton(win fyne.Window, filename *string, data *[]byte) *
 	return openFile
 }
 
-func makeDialogFileSaveButton(win fyne.Window, filename *string, User *client.User) *widget.Button {
-	saveFile := widget.NewButton("File Save", func() {
-		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
-			if err != nil {
-				dialog.ShowError(err, win)
-				return
-			}
-			if writer == nil {
-				log.Println("Cancelled")
-				return
-			}
-			fileSaved(writer, win, filename, User)
+// func makeDialogFileSaveButton(win fyne.Window, filename *string, User *client.User) *widget.Button {
+// 	saveFile := widget.NewButton("File Save", func() {
+// 		dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
+// 			if err != nil {
+// 				dialog.ShowError(err, win)
+// 				return
+// 			}
+// 			if writer == nil {
+// 				log.Println("Cancelled")
+// 				return
+// 			}
+// 			fileSaved(writer, win, filename, User)
 
-		}, win)
-	})
+// 		}, win)
+// 	})
 
-	return saveFile
+// 	return saveFile
+// }
+
+func loadFile(win fyne.Window, filename string, User *client.User) {
+	dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
+		if err != nil {
+			dialog.ShowError(err, win)
+			return
+		}
+		if writer == nil {
+			log.Println("Cancelled")
+			return
+		}
+		err2 := fileSaved(writer, filename, User)
+		if err2 != nil {
+			dialog.ShowError(err2, win)
+			return
+		} else {
+			dialog.ShowInformation("Success", "The file was successfully saved locally.", win)
+			log.Println("Saved to...", writer.URI())
+			return
+		}
+
+	}, win)
 }
 
-func fileSaved(f fyne.URIWriteCloser, w fyne.Window, filename *string, User *client.User) {
+func fileSaved(f fyne.URIWriteCloser, filename string, User *client.User) error {
 	defer f.Close()
 
 	// loadFile
-	if len(*filename) == 0 {
+	if len(filename) == 0 {
 		err := errors.New("filename is empty")
-		dialog.ShowError(err, w)
-		return
+		return err
 	}
-	log.Printf("filename: %s", *filename)
-	data, err := User.LoadFile(*filename)
+	log.Printf("filename: %s", filename)
+	data, err := User.LoadFile(filename)
 	if err != nil {
-		log.Println(err.Error())
-		dialog.ShowError(err, w)
-		return
+		return err
 	}
 	log.Printf("data: %s", data)
 	_, err = f.Write(data)
 	if err != nil {
-		dialog.ShowError(err, w)
-		return
+		return err
 	}
-	dialog.ShowInformation("Success", "The file was successfully saved locally.", w)
+	// dialog.ShowInformation("Success", "The file was successfully saved locally.", w)
 	log.Println("Saved to...", f.URI())
+
+	return nil
 }
 
 func makeStoreFile(win fyne.Window, User *client.User) fyne.CanvasObject {
@@ -321,41 +319,275 @@ func makeStoreFile(win fyne.Window, User *client.User) fyne.CanvasObject {
 
 	StoreFileButtion := makeDialogOpenFileButton(win, &filename, &data)
 
-	StoreAndUploadButton := widget.NewButton("upload", func() {
-		if len(filename) == 0 || len(data) == 0 {
-			log.Println("File does not exist.")
-			dialog.ShowInformation("Error", "File does not exist!", win)
-			// dialog.NewError(errors.New("file does not exist"), win)
-			return
-		}
-		err := User.StoreFile(filename, data)
-		if err != nil {
-			fyne.LogError("failed to storefile", err)
-			return
-		}
-		dialog.ShowInformation("Success", "File uploaded successfully.", win)
-		filename = ""
-		data = nil
-		log.Println("test ShowInformation")
-	})
-
-	content := container.New(layout.NewVBoxLayout(), StoreFileButtion, layout.NewSpacer(), StoreAndUploadButton)
-	return content
+	form := &widget.Form{
+		Items: []*widget.FormItem{
+			{Text: "Select local file: ", Widget: StoreFileButtion},
+		},
+		OnCancel: func() {
+			log.Println("Cancelled")
+			filename = ""
+			data = nil
+		},
+		OnSubmit: func() {
+			err := storeFile(filename, data, User)
+			if err != nil {
+				dialog.ShowError(err, win)
+			} else {
+				dialog.ShowInformation("Success", "File uploaded successfully.", win)
+				filename = ""
+				data = nil
+				log.Println("File uploaded successfully")
+			}
+		},
+	}
+	// StoreAndUploadButton := widget.NewButton("upload", func() {
+	// 	if len(filename) == 0 || len(data) == 0 {
+	// 		log.Println("File does not exist.")
+	// 		dialog.ShowInformation("Error", "File does not exist!", win)
+	// 		// dialog.NewError(errors.New("file does not exist"), win)
+	// 		return
+	// 	}
+	// 	err := User.StoreFile(filename, data)
+	// 	if err != nil {
+	// 		fyne.LogError("failed to storefile", err)
+	// 		return
+	// 	}
+	// 	dialog.ShowInformation("Success", "File uploaded successfully.", win)
+	// 	filename = ""
+	// 	data = nil
+	// 	log.Println("test ShowInformation")
+	// })
+	// content := container.New(layout.NewVBoxLayout(), StoreFileButtion, layout.NewSpacer(), StoreAndUploadButton)
+	return form
 }
 
 func makeLoadFile(win fyne.Window, User *client.User) fyne.CanvasObject {
 	// 输入文件名的输入框
 	filename := widget.NewEntry()
-	filename.SetPlaceHolder("Enter the filename")
+	filename.SetPlaceHolder("xxx.txt")
 
 	// 保存按钮
-	LoadAndSaveButton := makeDialogFileSaveButton(win, &filename.Text, User)
+	// LoadAndSaveButton := makeDialogFileSaveButton(win, &filename.Text, User)
 
-	// 从datastore获取数据
-	// 保存到本地文件夹
+	form := &widget.Form{
+		SubmitText: "File Save",
+		Items: []*widget.FormItem{
+			{Text: "Filename: ", Widget: filename, HintText: "Input the filename to load"},
+		},
+		OnCancel: func() {
+			log.Println("Cancelled")
+			filename.SetText("")
+		},
+		OnSubmit: func() {
+			loadFile(win, filename.Text, User)
+			filename.SetText("")
+		},
+	}
 
-	content := container.New(layout.NewVBoxLayout(), filename, layout.NewSpacer(), LoadAndSaveButton)
+	return form
 
-	return content
+}
 
+func makeAppendToFile(win fyne.Window, User *client.User) fyne.CanvasObject {
+	// 输入文件名
+	// 输入内容
+	// 确认
+
+	filename := widget.NewEntry()
+	filename.SetPlaceHolder("xxx.txt")
+
+	appendText := widget.NewMultiLineEntry()
+
+	form := &widget.Form{
+		Items: []*widget.FormItem{
+			{Text: "Filename", Widget: filename, HintText: "Input the filename"},
+			{Text: "Content to add", Widget: appendText},
+		},
+		OnCancel: func() {
+			fmt.Println("Cancelled")
+			appendText.SetText("") // 清空输入文本
+
+		},
+		OnSubmit: func() {
+			fmt.Println("Form submitted")
+			err := appendToFile(filename.Text, appendText.Text, User)
+			if err != nil {
+				dialog.ShowError(err, win)
+			} else {
+				dialog.ShowInformation("Success", "Successfully added content!", win)
+				appendText.SetText("") // 清空输入文本
+			}
+
+		},
+	}
+	// form.Append("Password", password)
+	// form.Append("Disabled", disabled)
+	// form.Append("Message", largeText)
+	return form
+}
+
+func makeCreateInvitation(win fyne.Window, User *client.User) fyne.CanvasObject {
+	// 输入文件名
+	// 输入邀请用户的名称
+
+	filename := widget.NewEntry()
+	filename.SetPlaceHolder("xxx.txt")
+
+	username := widget.NewEntry()
+	username.SetPlaceHolder("John Smith")
+
+	form := &widget.Form{
+		SubmitText: "Confirm",
+		Items: []*widget.FormItem{
+			{Text: "Filename: ", Widget: filename, HintText: "Input the filename to share"},
+			{Text: "Username: ", Widget: username, HintText: "Input the user to invite"},
+		},
+		OnCancel: func() {
+			log.Println("Cancelled")
+			filename.SetText("")
+			username.SetText("")
+		},
+		OnSubmit: func() {
+			invitationUUID, err := createInvitation(filename.Text, username.Text, User)
+			if err != nil {
+				dialog.ShowError(err, win)
+			} else {
+				message := "Successfully generate the invitation UUID: \n" + invitationUUID.String()
+				dialog.ShowInformation("Success", message, win)
+			}
+			filename.SetText("")
+			username.SetText("")
+		},
+	}
+
+	return form
+}
+
+func makeAcceptInvitation(win fyne.Window, User *client.User) fyne.CanvasObject {
+	// 邀请者的用户名
+	// 邀请UUID
+	// 文件名
+	senderUsername := widget.NewEntry()
+	senderUsername.SetPlaceHolder("John Smith")
+
+	invitationUUID_btn := widget.NewEntry()
+	invitationUUID_btn.SetPlaceHolder("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+
+	filename := widget.NewEntry()
+	filename.SetPlaceHolder("xxx.txt")
+
+	form := &widget.Form{
+		SubmitText: "Confirm",
+		Items: []*widget.FormItem{
+			{Text: "Username: ", Widget: senderUsername, HintText: "Input the username of Inviter"},
+			{Text: "InvitationUUID: ", Widget: invitationUUID_btn, HintText: "Input the Invitation UUID"},
+			{Text: "Filename: ", Widget: filename, HintText: "Input the shared filename"},
+		},
+		OnCancel: func() {
+			log.Println("Cancelled")
+			senderUsername.SetText("")
+			invitationUUID_btn.SetText("")
+			filename.SetText("")
+		},
+		OnSubmit: func() {
+			err := acceptInvitation(senderUsername.Text, invitationUUID_btn.Text, filename.Text, User)
+			if err != nil {
+				dialog.ShowError(err, win)
+			} else {
+				dialog.ShowInformation("Success", "Successfully accept the invitation!", win)
+			}
+			senderUsername.SetText("")
+			invitationUUID_btn.SetText("")
+			filename.SetText("")
+		},
+	}
+
+	return form
+}
+
+func makeRevokeAccess(win fyne.Window, User *client.User) fyne.CanvasObject {
+	// 文件名
+	// 接收邀请的用户名
+	filename := widget.NewEntry()
+	filename.SetPlaceHolder("xxx.txt")
+
+	recipientUsername := widget.NewEntry()
+	recipientUsername.SetPlaceHolder("John Smith")
+
+	form := &widget.Form{
+		SubmitText: "Confirm",
+		Items: []*widget.FormItem{
+			{Text: "Filename: ", Widget: filename, HintText: "Input the filename to revoke"},
+			{Text: "Username: ", Widget: recipientUsername, HintText: "Input the targer user's name"},
+		},
+		OnCancel: func() {
+			log.Println("Cancelled")
+			filename.SetText("")
+			recipientUsername.SetText("")
+		},
+		OnSubmit: func() {
+			err := revokeAccess(filename.Text, recipientUsername.Text, User)
+			if err != nil {
+				dialog.ShowError(err, win)
+			} else {
+				dialog.ShowInformation("Success", "Successfully revoke the target user's access to specified file!", win)
+			}
+			filename.SetText("")
+			recipientUsername.SetText("")
+		},
+	}
+
+	return form
+}
+
+func storeFile(filename string, data []byte, User *client.User) error {
+	if len(filename) == 0 {
+		err := errors.New("filename is empty")
+		log.Println(err.Error())
+		return err
+	}
+	err := User.StoreFile(filename, data)
+	if err != nil {
+		fyne.LogError("failed to storefile", err)
+		return err
+	}
+	return nil
+}
+
+func appendToFile(filename string, appendText string, User *client.User) error {
+	appendBytes := []byte(appendText)
+	err := User.AppendToFile(filename, appendBytes)
+	return err
+}
+
+func createInvitation(filename string, username string, User *client.User) (invitationPtr uuid.UUID, err error) {
+	if len(filename) == 0 {
+		return uuid.Nil, errors.New("filename is empty")
+	}
+	if len(username) == 0 {
+		return uuid.Nil, errors.New("target username is empty")
+	}
+	invitationPtr, err = User.CreateInvitation(filename, username)
+	return
+}
+
+func acceptInvitation(senderUsername string, invitationUUID_str string, filename string, User *client.User) error {
+	invitationUUID, err := uuid.Parse(invitationUUID_str)
+	if err != nil {
+		return err
+	}
+	err = User.AcceptInvitation(senderUsername, invitationUUID, filename)
+	return err
+
+}
+
+func revokeAccess(filename string, recipientUsername string, User *client.User) error {
+	if len(filename) == 0 {
+		return errors.New("filename is empty")
+	}
+	if len(recipientUsername) == 0 {
+		return errors.New("username is empty")
+	}
+	err := User.RevokeAccess(filename, recipientUsername)
+	return err
 }
