@@ -15,7 +15,6 @@ package client
 // - strings
 
 import (
-	"A-Secure-File-Sharing-System/client"
 	"encoding/json"
 
 	userlib "github.com/cs161-staff/project2-userlib"
@@ -111,7 +110,6 @@ type TreeNode struct {
 	Value    uuid.UUID
 	Children []*TreeNode
 	Friend   []uuid.UUID
-	Father   *TreeNode
 }
 type User struct {
 	Username string
@@ -154,6 +152,7 @@ type KeyFile struct {
 // 文件分享结构体，键值为filename+文件拥有者UUID,为了与文件存贮位置区分开
 type Invitationfile struct {
 	InvitationID   uuid.UUID //分享验证码
+	Password       string
 	InvitationTree *TreeNode
 	SymKeyFile     []byte
 	MacKeyFile     []byte
@@ -406,9 +405,9 @@ func (userdata *User) CreateInvitation(filename string, recipientUsername string
 		return uuid.Nil, err
 	}
 	invitationdata.InvitationID = invitationPtr
+	invitationdata.Password = userdata.Password
 	// 创建分享树
 	root := &TreeNode{}
-	root.Father = nil
 	root.Value = userdataUUID
 	root.Friend = append(root.Friend, recipientUsernameUUID)
 	invitationdata.InvitationTree = root
@@ -466,12 +465,18 @@ func (userdata *User) AcceptInvitation(senderUsername string, invitationPtr uuid
 	if invitationPtr != Invitationfiledata.InvitationID {
 		return errors.New("分享验证码错误或分享已被撤销")
 	}
-	if client.Contains(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID) {
+	//如果recipientUsernameUUID在Friend中，加入到Children
+	if Contains(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID) {
 		recipientUserTree := &TreeNode{}
-		recipientUserTree.Father = Invitationfiledata.InvitationTree
 		recipientUserTree.Value = recipientUsernameUUID
 		Invitationfiledata.InvitationTree.Children = append(Invitationfiledata.InvitationTree.Children, recipientUserTree)
 	}
+	//将更改的数据存储到数据库
+	invitationdataBytes, err := json.Marshal(Invitationfiledata)
+	if err != nil {
+		return errors.New("无法把Invitationfile转为byte流")
+	}
+	userlib.DatastoreSet(InvitationIDdata, invitationdataBytes)
 	return nil
 }
 
@@ -518,7 +523,55 @@ func (userdata *User) RevokeAccess(filename string, recipientUsername string) er
 	}
 	//将分享验证码置零，Friend，Children数组剔除接收者
 	Invitationfiledata.InvitationID = uuid.UUID{}
-	Invitationfiledata.InvitationTree.Friend = client.RemoveFromSlice(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID)
-	Invitationfiledata.InvitationTree.Children = client.RemoveFromTree(Invitationfiledata.InvitationTree.Children, recipientUsernameUUID)
+	Invitationfiledata.InvitationTree.Friend = RemoveFromSlice(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID)
+	Invitationfiledata.InvitationTree.Children = RemoveFromTree(Invitationfiledata.InvitationTree.Children, recipientUsernameUUID)
+	//将更改的数据存储到数据库
+	invitationdataBytes, err := json.Marshal(Invitationfiledata)
+	if err != nil {
+		return errors.New("无法把Invitationfile转为byte流")
+	}
+	userlib.DatastoreSet(InvitationIDdata, invitationdataBytes)
 	return nil
+}
+
+func (userdata *User) LoadOthersFile(filename string, ownername string) (content []byte, err error) {
+	//找到Invitationfile
+	//生成Invitationfile的ID
+	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + ownername))[:16])
+	if err != nil {
+		return nil, err
+	}
+	//索引
+	InvitationfileJSON, ok := userlib.DatastoreGet(InvitationIDdata)
+	if ok != true {
+		return nil, errors.New("您没有访问权限")
+	}
+	//导出
+	var Invitationfiledata Invitationfile
+	err_Marshal := json.Unmarshal(InvitationfileJSON, &Invitationfiledata)
+	if err_Marshal != nil {
+		return nil, err_Marshal
+	}
+	//生成UUID
+	ownernameUUID, err := uuid.FromBytes(userlib.Hash([]byte(ownername))[:16])
+	if err != nil {
+		return nil, err
+	}
+	userdataUUID, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username))[:16])
+	if err != nil {
+		return nil, err
+	}
+	if ownernameUUID != Invitationfiledata.InvitationTree.Value {
+		return nil, errors.New("文件拥有者错误")
+	}
+	foundNode := DFS(Invitationfiledata.InvitationTree, userdataUUID)
+	if foundNode == nil {
+		return nil, errors.New("您没有访问权限")
+	}
+	ownuser, err := GetUser(ownername, Invitationfiledata.Password)
+	if err != nil {
+		return nil, err
+	}
+	contents, _ := ownuser.LoadFile(filename)
+	return contents, err
 }
