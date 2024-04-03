@@ -15,6 +15,7 @@ package client
 // - strings
 
 import (
+	"A-Secure-File-Sharing-System/client"
 	"encoding/json"
 
 	userlib "github.com/cs161-staff/project2-userlib"
@@ -465,7 +466,7 @@ func (userdata *User) AcceptInvitation(senderUsername string, invitationPtr uuid
 	if invitationPtr != Invitationfiledata.InvitationID {
 		return errors.New("分享验证码错误或分享已被撤销")
 	}
-	if Contains(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID) {
+	if client.Contains(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID) {
 		recipientUserTree := &TreeNode{}
 		recipientUserTree.Father = Invitationfiledata.InvitationTree
 		recipientUserTree.Value = recipientUsernameUUID
@@ -517,7 +518,7 @@ func (userdata *User) RevokeAccess(filename string, recipientUsername string) er
 	}
 	//将分享验证码置零，Friend，Children数组剔除接收者
 	Invitationfiledata.InvitationID = uuid.UUID{}
-	Invitationfiledata.InvitationTree.Friend = RemoveFromSlice(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID)
-	Invitationfiledata.InvitationTree.Children = RemoveFromTree(Invitationfiledata.InvitationTree.Children, recipientUsernameUUID)
+	Invitationfiledata.InvitationTree.Friend = client.RemoveFromSlice(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID)
+	Invitationfiledata.InvitationTree.Children = client.RemoveFromTree(Invitationfiledata.InvitationTree.Children, recipientUsernameUUID)
 	return nil
 }

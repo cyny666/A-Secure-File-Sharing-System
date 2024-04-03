@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"errors"
+
 	userlib "github.com/cs161-staff/project2-userlib"
 	"github.com/google/uuid"
 )
@@ -101,4 +102,41 @@ func (userdata *User) StoreFilelocator(filelocator FileLocator, filename string)
 	newUserEncrypted = append(newUserEncrypted, hmacTag...)
 	userlib.DatastoreSet(storageKey, newUserEncrypted)
 	return nil
+}
+
+func Contains(slice []uuid.UUID, s uuid.UUID) bool {
+	for _, value := range slice {
+		if value == s {
+			return true
+		}
+	}
+	return false
+}
+
+func RemoveFromSlice(slice []uuid.UUID, elem uuid.UUID) []uuid.UUID {
+	var result []uuid.UUID
+
+	// 遍历原始切片
+	for _, v := range slice {
+		// 如果元素不等于要移除的元素，将其添加到结果切片中
+		if v != elem {
+			result = append(result, v)
+		}
+	}
+
+	return result
+}
+
+func RemoveFromTree(Children []*TreeNode, Value uuid.UUID) []*TreeNode {
+	var result []*TreeNode
+
+	// 遍历原始切片
+	for _, v := range Children {
+		// 如果元素不等于要移除的元素，将其添加到结果切片中
+		if v.Value != Value {
+			result = append(result, v)
+		}
+	}
+
+	return result
 }
