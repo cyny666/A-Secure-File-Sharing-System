@@ -107,8 +107,10 @@ func someUsefulThings() {
 // (e.g. like the Username attribute) and methods (e.g. like the StoreFile method below).
 // 这里来定义一下结构体
 type TreeNode struct {
-	Value    int
+	Value    uuid.UUID
 	Children []*TreeNode
+	Friend   []uuid.UUID
+	Father   *TreeNode
 }
 type User struct {
 	Username string
@@ -140,13 +142,6 @@ type FileLocator struct {
 	SymKeyFn      []byte
 }
 
-// 文件分享接收者通过 Intermediate 获取 fileLocator 的解密密钥
-type Intermediate struct {
-	FileLocatorUUID   uuid.UUID
-	SymKeyFileLocator []byte
-	MacKeyFileLocator []byte
-}
-
 // 每个用户通过 keyFile 来打开 file
 type KeyFile struct {
 	isFileOwner bool
@@ -155,11 +150,12 @@ type KeyFile struct {
 	MacKeyFile  []byte
 }
 
-// 文件分享邀请
-type Invitation struct {
-	IntermediateUUID uuid.UUID
-	SymKeyInter      []byte
-	MacKeyInter      []byte
+// 文件分享结构体，键值为filename+文件拥有者UUID,为了与文件存贮位置区分开
+type Invitationfile struct {
+	InvitationID   uuid.UUID //分享验证码
+	InvitationTree *TreeNode
+	SymKeyFile     []byte
+	MacKeyFile     []byte
 }
 
 // NOTE: The following methods have toy (insecure!) implementations.
@@ -249,7 +245,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	UserBytes_jsoned := userlib.SymDec(symEncKey, newUserEncryted)
 
 	err_Marshal := json.Unmarshal(UserBytes_jsoned, &userdata)
-	if err != nil {
+	if err_Marshal != nil {
 		return nil, err_Marshal
 	}
 
@@ -370,13 +366,158 @@ func (userdata *User) LoadFile(filename string) (content []byte, err error) {
 
 func (userdata *User) CreateInvitation(filename string, recipientUsername string) (
 	invitationPtr uuid.UUID, err error) {
-	return
+	//生成userdata的UUID
+	hashUsername := userlib.Hash([]byte(userdata.Username))
+	userdataUUID, err := uuid.FromBytes(hashUsername[:16])
+	if err != nil {
+		return uuid.Nil, err
+	}
+	//生成recipientUsername的UUID
+	hashrecipientUsername := userlib.Hash([]byte(recipientUsername))
+	recipientUsernameUUID, err := uuid.FromBytes(hashrecipientUsername[:16])
+	if err != nil {
+		return uuid.Nil, err
+	}
+	//生成filename的ID
+	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
+	if err != nil {
+		return uuid.Nil, err
+	}
+	//文件不存在
+	if _, ok := userlib.DatastoreGet(storageKey); ok != true {
+		return uuid.Nil, errors.New("文件不存在")
+	}
+	//被邀请用户名为空
+	if len(recipientUsername) == 0 {
+		return uuid.Nil, errors.New("被邀请用户名不能为空")
+	}
+	//邀请的用户不存在
+	if _, ok := userlib.DatastoreGet(recipientUsernameUUID); ok != true {
+		return uuid.Nil, errors.New("邀请的用户不存在")
+	}
+	//创建邀请码
+	invitationPtr = uuid.New()
+	//创建Invitationfile
+	var invitationdata Invitationfile
+	//生成Invitationfile的ID
+	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+	if err != nil {
+		return uuid.Nil, err
+	}
+	invitationdata.InvitationID = invitationPtr
+	// 创建分享树
+	root := &TreeNode{}
+	root.Father = nil
+	root.Value = userdataUUID
+	root.Friend = append(root.Friend, recipientUsernameUUID)
+	invitationdata.InvitationTree = root
+	//存储Invitationfile
+	invitationdataBytes, err := json.Marshal(invitationdata)
+	if err != nil {
+		return uuid.Nil, errors.New("无法把Invitationfile转为byte流")
+	}
+	userlib.DatastoreSet(InvitationIDdata, invitationdataBytes)
+	return invitationPtr, nil
 }
 
 func (userdata *User) AcceptInvitation(senderUsername string, invitationPtr uuid.UUID, filename string) error {
+	//生成senderUsername的UUID
+	hashsenderUsername := userlib.Hash([]byte(senderUsername))
+	senderUsernameUUID, err := uuid.FromBytes(hashsenderUsername[:16])
+	if err != nil {
+		return err
+	}
+	if _, ok := userlib.DatastoreGet(senderUsernameUUID); ok != true {
+		return errors.New("发出分享的用户不存在")
+	}
+	//生成filename的ID
+	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(senderUsername + filename))[:16])
+	if err != nil {
+		return err
+	}
+	//文件不存在
+	if _, ok := userlib.DatastoreGet(storageKey); ok != true {
+		return errors.New("文件不存在")
+	}
+	//生成接收者UUID
+	hashrecipientUsername := userlib.Hash([]byte(userdata.Username))
+	recipientUsernameUUID, err := uuid.FromBytes(hashrecipientUsername[:16])
+	if err != nil {
+		return err
+	}
+	//找到Invitationfile
+	//生成Invitationfile的ID
+	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + senderUsername))[:16])
+	if err != nil {
+		return err
+	}
+	//索引
+	InvitationfileJSON, ok := userlib.DatastoreGet(InvitationIDdata)
+	if ok != true {
+		return errors.New("Invitationfile不存在")
+	}
+	//导出
+	var Invitationfiledata Invitationfile
+	err_Marshal := json.Unmarshal(InvitationfileJSON, &Invitationfiledata)
+	if err_Marshal != nil {
+		return err_Marshal
+	}
+	if invitationPtr != Invitationfiledata.InvitationID {
+		return errors.New("分享验证码错误或分享已被撤销")
+	}
+	if Contains(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID) {
+		recipientUserTree := &TreeNode{}
+		recipientUserTree.Father = Invitationfiledata.InvitationTree
+		recipientUserTree.Value = recipientUsernameUUID
+		Invitationfiledata.InvitationTree.Children = append(Invitationfiledata.InvitationTree.Children, recipientUserTree)
+	}
 	return nil
 }
 
 func (userdata *User) RevokeAccess(filename string, recipientUsername string) error {
+	//生成recipientUsername的UUID
+	hashrecipientUsername := userlib.Hash([]byte(recipientUsername))
+	recipientUsernameUUID, err := uuid.FromBytes(hashrecipientUsername[:16])
+	if err != nil {
+		return err
+	}
+	//生成filename的ID
+	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename))[:16])
+	if err != nil {
+		return err
+	}
+	//文件不存在
+	if _, ok := userlib.DatastoreGet(storageKey); ok != true {
+		return errors.New("文件不存在")
+	}
+	//被撤销邀请用户名为空
+	if len(recipientUsername) == 0 {
+		return errors.New("被撤销邀请用户名不能为空")
+	}
+	//撤销邀请的用户不存在
+	if _, ok := userlib.DatastoreGet(recipientUsernameUUID); ok != true {
+		return errors.New("撤销邀请的用户不存在")
+	}
+	//找到Invitationfile
+	//生成Invitationfile的ID
+	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+	if err != nil {
+		return err
+	}
+	//索引
+	InvitationfileJSON, ok := userlib.DatastoreGet(InvitationIDdata)
+	if ok != true {
+		return errors.New("Invitationfile不存在")
+	}
+	//导出
+	var Invitationfiledata Invitationfile
+	err_Marshal := json.Unmarshal(InvitationfileJSON, &Invitationfiledata)
+	if err_Marshal != nil {
+		return err_Marshal
+	}
+	//将分享验证码置零，Friend，Children数组剔除接收者
+	Invitationfiledata.InvitationID = uuid.UUID{}
+	Invitationfiledata.InvitationTree.Friend = RemoveFromSlice(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID)
+	Invitationfiledata.InvitationTree.Children = RemoveFromTree(Invitationfiledata.InvitationTree.Children, recipientUsernameUUID)
 	return nil
 }
