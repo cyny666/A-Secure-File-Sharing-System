@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/flopp/go-findfont"
 	"github.com/google/uuid"
 )
 
@@ -591,3 +594,38 @@ func revokeAccess(filename string, recipientUsername string, User *client.User) 
 	err := User.RevokeAccess(filename, recipientUsername)
 	return err
 }
+
+// 设置主题字体
+
+func inits() {
+	//设置中文字体:解决中文乱码问题
+	fontPaths := findfont.List()
+	for _, path := range fontPaths {
+		if strings.Contains(path, "msyhbd.ttf") || strings.Contains(path, "msyh.ttf") ||
+			strings.Contains(path, "msyhl.ttf") || strings.Contains(path, "simhei.ttf") ||
+			strings.Contains(path, "simsun.ttc") || strings.Contains(path, "simkai.ttf") ||
+			strings.Contains(path, "PingFangSC-Regular.ttf") || strings.Contains(path, "PingFangTC-Regular.ttf") ||
+			strings.Contains(path, "DroidSansFallbackFull.ttf") || strings.Contains(path, "uming.ttc") {
+			os.Setenv("FYNE_FONT", path)
+			break
+		}
+	}
+}
+
+// func setWindowCenter(w fyne.Window) {
+// 	// 获取屏幕的宽度和高度
+// 	screenWidth := w.Canvas().Size().Width
+// 	screenHeight := w.Canvas().Size().Height
+
+// 	// 获取窗口的尺寸
+// 	windowWidth := w.Content().MinSize().Width
+// 	windowHeight := w.Content().MinSize().Height
+
+// 	// 计算窗口的位置，使其居中显示
+// 	windowPosX := (screenWidth - windowWidth) / 2
+// 	windowPosY := (screenHeight - windowHeight) / 2
+
+// 	// 设置窗口的位置
+// 	w.Move(windowPosX, windowPosY)
+
+// }

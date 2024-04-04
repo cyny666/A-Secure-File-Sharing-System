@@ -6,9 +6,11 @@ require github.com/cs161-staff/project2-userlib v0.5.1
 
 require (
 	fyne.io/fyne/v2 v2.4.4
+	github.com/flopp/go-findfont v0.1.0
 	github.com/google/uuid v1.3.0
 	github.com/onsi/ginkgo/v2 v2.11.0
 	github.com/onsi/gomega v1.27.8
+	golang.org/x/crypto v0.14.0
 )
 
 require (
@@ -36,7 +38,6 @@ require (
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/tevino/abool v1.2.0 // indirect
 	github.com/yuin/goldmark v1.5.5 // indirect
-	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/image v0.11.0 // indirect
 	golang.org/x/mobile v0.0.0-20230531173138-3c911d8e3eda // indirect
 	golang.org/x/net v0.17.0 // indirect

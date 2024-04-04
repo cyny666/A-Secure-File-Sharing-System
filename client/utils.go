@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	userlib "github.com/cs161-staff/project2-userlib"
+	userlib "A-Secure-File-Sharing-System/userlib_client"
+
 	"github.com/google/uuid"
 )
 
