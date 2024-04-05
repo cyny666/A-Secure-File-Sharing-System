@@ -23,7 +23,6 @@ func makeLogin_returnWindow() (fyne.Window, error) {
 	app := fyne.CurrentApp()
 	// 登陆窗口
 	loginWidget := app.NewWindow("LogIn")
-
 	username := widget.NewEntry()
 	username.SetPlaceHolder("John Smith")
 
@@ -47,8 +46,9 @@ func makeLogin_returnWindow() (fyne.Window, error) {
 			if authenticate(username.Text, password.Text) {
 
 				User, _ := client.GetUser(username.Text, password.Text)
-				showMainWindow(app, User)
-				loginWidget.Close()
+				showMainWindow(app, User, loginWidget) // 传递loginWidget，确保不会提前关闭窗口使得程序退出
+
+				// defer loginWidget.Close() // 延迟关闭
 				// // 发送显示主界面的操作到主 goroutine 中
 				// app.Send(func() {
 				// 	showMainWindow(fyneApp)
@@ -174,12 +174,12 @@ func authenticate_register(username, password1, password2 string) error {
 	return nil
 }
 
-func showMainWindow(app fyne.App, User *client.User) {
+func showMainWindow(app fyne.App, User *client.User, loginWindow fyne.Window) {
 
 	log.Println("登陆成功")
 
 	w := app.NewWindow("test")
-
+	w.SetMaster()
 	w.Resize(fyne.NewSize(600, 350)) // 重置窗口大小
 
 	// newNav := makeNav()
@@ -189,6 +189,8 @@ func showMainWindow(app fyne.App, User *client.User) {
 	w.SetContent(newTabs)
 
 	w.Show()
+
+	loginWindow.Close()
 	// log.Println("w.Show()")
 
 }
@@ -202,6 +204,7 @@ func makeTabs(win fyne.Window, User *client.User) fyne.CanvasObject {
 	CreateInvitaion := makeCreateInvitation(win, User)
 	AcceptInvitation := makeAcceptInvitation(win, User)
 	revokeAccess := makeRevokeAccess(win, User)
+	LoadOthersFile := makeLoadOthersFile(win, User)
 	tabs := container.NewAppTabs(
 		container.NewTabItem("StoreFile", StoreFile),
 		container.NewTabItem("LoadFile", LoadFile),
@@ -209,6 +212,7 @@ func makeTabs(win fyne.Window, User *client.User) fyne.CanvasObject {
 		container.NewTabItem("CreateInvitation", CreateInvitaion),
 		container.NewTabItem("AcceptInvitation", AcceptInvitation),
 		container.NewTabItem("RevokeAccess", revokeAccess),
+		container.NewTabItem("LoadOthersFile", LoadOthersFile),
 	)
 
 	//tabs.Append(container.NewTabItemWithIcon("Home", theme.HomeIcon(), widget.NewLabel("Home tab")))
@@ -288,6 +292,29 @@ func loadFile(win fyne.Window, filename string, User *client.User) {
 	}, win)
 }
 
+func loadOthersFile(win fyne.Window, filename string, ownername string, User *client.User) {
+	dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
+		if err != nil {
+			dialog.ShowError(err, win)
+			return
+		}
+		if writer == nil {
+			log.Println("Cancelled")
+			return
+		}
+		err2 := fileSavedOthers(writer, filename, ownername, User)
+		if err2 != nil {
+			dialog.ShowError(err2, win)
+			return
+		} else {
+			dialog.ShowInformation("Success", "The file was successfully saved locally.", win)
+			log.Println("Saved to...", writer.URI())
+			return
+		}
+
+	}, win)
+}
+
 func fileSaved(f fyne.URIWriteCloser, filename string, User *client.User) error {
 	defer f.Close()
 
@@ -298,6 +325,30 @@ func fileSaved(f fyne.URIWriteCloser, filename string, User *client.User) error 
 	}
 	log.Printf("filename: %s", filename)
 	data, err := User.LoadFile(filename)
+	if err != nil {
+		return err
+	}
+	log.Printf("data: %s", data)
+	_, err = f.Write(data)
+	if err != nil {
+		return err
+	}
+	// dialog.ShowInformation("Success", "The file was successfully saved locally.", w)
+	log.Println("Saved to...", f.URI())
+
+	return nil
+}
+
+func fileSavedOthers(f fyne.URIWriteCloser, filename string, ownername string, User *client.User) error {
+	defer f.Close()
+
+	// loadFile
+	if len(filename) == 0 {
+		err := errors.New("filename is empty")
+		return err
+	}
+	log.Printf("filename: %s", filename)
+	data, err := User.LoadOthersFile(filename, ownername)
 	if err != nil {
 		return err
 	}
@@ -391,6 +442,35 @@ func makeLoadFile(win fyne.Window, User *client.User) fyne.CanvasObject {
 
 }
 
+func makeLoadOthersFile(win fyne.Window, User *client.User) fyne.CanvasObject {
+	// 输入文件名的输入框
+	filename := widget.NewEntry()
+	filename.SetPlaceHolder("xxx.txt")
+
+	username := widget.NewEntry()
+	username.SetPlaceHolder("John Smith")
+
+	// 保存按钮
+	// LoadAndSaveButton := makeDialogFileSaveButton(win, &filename.Text, User)
+
+	form := &widget.Form{
+		SubmitText: "File Save",
+		Items: []*widget.FormItem{
+			{Text: "Filename: ", Widget: filename, HintText: "Input the other's filename to load"},
+			{Text: "Username: ", Widget: username, HintText: "Input the other's username"},
+		},
+		OnCancel: func() {
+			log.Println("Cancelled")
+			filename.SetText("")
+		},
+		OnSubmit: func() {
+			loadOthersFile(win, filename.Text, username.Text, User)
+			filename.SetText("")
+		},
+	}
+
+	return form
+}
 func makeAppendToFile(win fyne.Window, User *client.User) fyne.CanvasObject {
 	// 输入文件名
 	// 输入内容

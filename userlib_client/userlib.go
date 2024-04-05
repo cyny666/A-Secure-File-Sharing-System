@@ -268,8 +268,6 @@ func keystoreSet(key string, value PublicKeyType) error {
 
 	// keystoreShard[key] = value
 	// return nil
-
-	return nil
 }
 
 var KeystoreSet = keystoreSet
