@@ -661,7 +661,8 @@ func MapKeyFromBytes(data []byte) (truncated string) {
 }
 
 func sendPostRequest(url string, postData []byte) ([]byte, error) {
-	urlPrefix := "http://8.130.23.239:8080/"
+	// urlPrefix := "http://8.130.23.239:8080/"
+	urlPrefix := "http://8.130.8.68:8080/"
 	// 创建一个字节缓冲区，用于存储 POST 数据
 	buffer := bytes.NewBuffer(postData)
 
