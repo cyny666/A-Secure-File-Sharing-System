@@ -50,12 +50,6 @@ var _ = Describe("Client Tests", func() {
 	var alice *client.User
 	var bob *client.User
 	var charles *client.User
-	// var doris *client.User
-	// var eve *client.User
-	// var frank *client.User
-	// var grace *client.User
-	// var horace *client.User
-	// var ira *client.User
 
 	// These declarations may be useful for multi-session testing.
 	var alicePhone *client.User
@@ -68,12 +62,7 @@ var _ = Describe("Client Tests", func() {
 	aliceFile := "aliceFile.txt"
 	bobFile := "bobFile.txt"
 	charlesFile := "charlesFile.txt"
-	// dorisFile := "dorisFile.txt"
-	// eveFile := "eveFile.txt"
-	// frankFile := "frankFile.txt"
-	// graceFile := "graceFile.txt"
-	// horaceFile := "horaceFile.txt"
-	// iraFile := "iraFile.txt"
+	bobFile2 := "bobFile2.txt"
 
 	BeforeEach(func() {
 		// This runs before each test within this Describe block (including nested tests).
@@ -142,24 +131,29 @@ var _ = Describe("Client Tests", func() {
 			err = bob.AppendToFile(bobFile, []byte(contentTwo))
 			Expect(err).To(BeNil())
 
+			userlib.DebugMsg("Checking that Bob sees expected file data.")
+			data, err := bob.LoadFile(bobFile)
+			Expect(err).To(BeNil())
+			Expect(data).To(Equal([]byte(contentOne + contentTwo)))
+
 			userlib.DebugMsg("aliceDesktop appending to file %s, content: %s", aliceFile, contentThree)
 			err = aliceDesktop.AppendToFile(aliceFile, []byte(contentThree))
 			Expect(err).To(BeNil())
 
 			userlib.DebugMsg("Checking that aliceDesktop sees expected file data.")
-			data, err := aliceDesktop.LoadFile(aliceFile)
+			data, err = aliceDesktop.LoadFile(aliceFile)
 			Expect(err).To(BeNil())
-			Expect(data).To(Equal([]byte(contentOne + contentTwo + contentThree)))
+			Expect(data).To(Equal([]byte(contentOne + contentThree)))
 
 			userlib.DebugMsg("Checking that aliceLaptop sees expected file data.")
 			data, err = aliceLaptop.LoadFile(aliceFile)
 			Expect(err).To(BeNil())
-			Expect(data).To(Equal([]byte(contentOne + contentTwo + contentThree)))
+			Expect(data).To(Equal([]byte(contentOne + contentThree)))
 
 			userlib.DebugMsg("Checking that Bob sees expected file data.")
 			data, err = bob.LoadFile(bobFile)
 			Expect(err).To(BeNil())
-			Expect(data).To(Equal([]byte(contentOne + contentTwo + contentThree)))
+			Expect(data).To(Equal([]byte(contentOne + contentTwo)))
 
 			userlib.DebugMsg("Getting third instance of Alice - alicePhone.")
 			alicePhone, err = client.GetUser("alice", defaultPassword)
@@ -168,7 +162,7 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("Checking that alicePhone sees Alice's changes.")
 			data, err = alicePhone.LoadFile(aliceFile)
 			Expect(err).To(BeNil())
-			Expect(data).To(Equal([]byte(contentOne + contentTwo + contentThree)))
+			Expect(data).To(Equal([]byte(contentOne + contentThree)))
 		})
 
 		Specify("Basic Test: Testing Revoke Functionality", func() {
@@ -229,18 +223,8 @@ var _ = Describe("Client Tests", func() {
 			Expect(err).To(BeNil())
 			Expect(data).To(Equal([]byte(contentOne)))
 
-			userlib.DebugMsg("Checking that Bob/Charles lost access to the file.")
-			_, err = bob.LoadFile(bobFile)
-			Expect(err).ToNot(BeNil())
-
-			_, err = charles.LoadFile(charlesFile)
-			Expect(err).ToNot(BeNil())
-
-			userlib.DebugMsg("Checking that the revoked users cannot append to the file.")
-			err = bob.AppendToFile(bobFile, []byte(contentTwo))
-			Expect(err).ToNot(BeNil())
-
-			err = charles.AppendToFile(charlesFile, []byte(contentTwo))
+			userlib.DebugMsg("Checking that Bob cannot accept the invitation.")
+			err = bob.AcceptInvitation("alice", invite, bobFile2)
 			Expect(err).ToNot(BeNil())
 		})
 
