@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/atotto/clipboard"
 	"github.com/flopp/go-findfont"
 	"github.com/google/uuid"
 )
@@ -535,8 +536,19 @@ func makeCreateInvitation(win fyne.Window, User *client.User) fyne.CanvasObject 
 			if err != nil {
 				dialog.ShowError(err, win)
 			} else {
-				message := "Successfully generate the invitation UUID: \n" + invitationUUID.String()
-				dialog.ShowInformation("Success", message, win)
+				// message := "Successfully generate the invitation UUID: \n" + invitationUUID.String()
+				// dialog.ShowInformation("Success", message, win)
+				// 创建可复制的标签
+				label := widget.NewLabelWithStyle("Successfully generate the invitation UUID:\n"+invitationUUID.String(), fyne.TextAlignCenter, fyne.TextStyle{Monospace: true})
+
+				// 创建复制按钮
+				copyButton := widget.NewButton("Copy", func() {
+					clipboard.WriteAll(invitationUUID.String())
+				})
+				container := container.New(layout.NewVBoxLayout(), label, copyButton)
+				// 创建对话框并显示
+				dialog.ShowCustom("Success", "Close", container, win)
+
 			}
 			filename.SetText("")
 			username.SetText("")

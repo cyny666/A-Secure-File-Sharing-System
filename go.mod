@@ -6,6 +6,7 @@ require github.com/cs161-staff/project2-userlib v0.5.1
 
 require (
 	fyne.io/fyne/v2 v2.4.4
+	github.com/atotto/clipboard v0.1.4
 	github.com/flopp/go-findfont v0.1.0
 	github.com/google/uuid v1.3.0
 	github.com/onsi/ginkgo/v2 v2.11.0
