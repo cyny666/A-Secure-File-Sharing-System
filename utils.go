@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	"github.com/atotto/clipboard"
 	"github.com/flopp/go-findfont"
 	"github.com/google/uuid"
 )
@@ -204,7 +205,6 @@ func makeTabs(win fyne.Window, User *client.User) fyne.CanvasObject {
 	CreateInvitaion := makeCreateInvitation(win, User)
 	AcceptInvitation := makeAcceptInvitation(win, User)
 	revokeAccess := makeRevokeAccess(win, User)
-	LoadOthersFile := makeLoadOthersFile(win, User)
 	tabs := container.NewAppTabs(
 		container.NewTabItem("StoreFile", StoreFile),
 		container.NewTabItem("LoadFile", LoadFile),
@@ -212,7 +212,6 @@ func makeTabs(win fyne.Window, User *client.User) fyne.CanvasObject {
 		container.NewTabItem("CreateInvitation", CreateInvitaion),
 		container.NewTabItem("AcceptInvitation", AcceptInvitation),
 		container.NewTabItem("RevokeAccess", revokeAccess),
-		container.NewTabItem("LoadOthersFile", LoadOthersFile),
 	)
 
 	//tabs.Append(container.NewTabItemWithIcon("Home", theme.HomeIcon(), widget.NewLabel("Home tab")))
@@ -292,29 +291,6 @@ func loadFile(win fyne.Window, filename string, User *client.User) {
 	}, win)
 }
 
-func loadOthersFile(win fyne.Window, filename string, ownername string, User *client.User) {
-	dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
-		if err != nil {
-			dialog.ShowError(err, win)
-			return
-		}
-		if writer == nil {
-			log.Println("Cancelled")
-			return
-		}
-		err2 := fileSavedOthers(writer, filename, ownername, User)
-		if err2 != nil {
-			dialog.ShowError(err2, win)
-			return
-		} else {
-			dialog.ShowInformation("Success", "The file was successfully saved locally.", win)
-			log.Println("Saved to...", writer.URI())
-			return
-		}
-
-	}, win)
-}
-
 func fileSaved(f fyne.URIWriteCloser, filename string, User *client.User) error {
 	defer f.Close()
 
@@ -325,30 +301,6 @@ func fileSaved(f fyne.URIWriteCloser, filename string, User *client.User) error 
 	}
 	log.Printf("filename: %s", filename)
 	data, err := User.LoadFile(filename)
-	if err != nil {
-		return err
-	}
-	log.Printf("data: %s", data)
-	_, err = f.Write(data)
-	if err != nil {
-		return err
-	}
-	// dialog.ShowInformation("Success", "The file was successfully saved locally.", w)
-	log.Println("Saved to...", f.URI())
-
-	return nil
-}
-
-func fileSavedOthers(f fyne.URIWriteCloser, filename string, ownername string, User *client.User) error {
-	defer f.Close()
-
-	// loadFile
-	if len(filename) == 0 {
-		err := errors.New("filename is empty")
-		return err
-	}
-	log.Printf("filename: %s", filename)
-	data, err := User.LoadOthersFile(filename, ownername)
 	if err != nil {
 		return err
 	}
@@ -442,35 +394,6 @@ func makeLoadFile(win fyne.Window, User *client.User) fyne.CanvasObject {
 
 }
 
-func makeLoadOthersFile(win fyne.Window, User *client.User) fyne.CanvasObject {
-	// 输入文件名的输入框
-	filename := widget.NewEntry()
-	filename.SetPlaceHolder("xxx.txt")
-
-	username := widget.NewEntry()
-	username.SetPlaceHolder("John Smith")
-
-	// 保存按钮
-	// LoadAndSaveButton := makeDialogFileSaveButton(win, &filename.Text, User)
-
-	form := &widget.Form{
-		SubmitText: "File Save",
-		Items: []*widget.FormItem{
-			{Text: "Filename: ", Widget: filename, HintText: "Input the other's filename to load"},
-			{Text: "Username: ", Widget: username, HintText: "Input the other's username"},
-		},
-		OnCancel: func() {
-			log.Println("Cancelled")
-			filename.SetText("")
-		},
-		OnSubmit: func() {
-			loadOthersFile(win, filename.Text, username.Text, User)
-			filename.SetText("")
-		},
-	}
-
-	return form
-}
 func makeAppendToFile(win fyne.Window, User *client.User) fyne.CanvasObject {
 	// 输入文件名
 	// 输入内容
@@ -535,8 +458,19 @@ func makeCreateInvitation(win fyne.Window, User *client.User) fyne.CanvasObject 
 			if err != nil {
 				dialog.ShowError(err, win)
 			} else {
-				message := "Successfully generate the invitation UUID: \n" + invitationUUID.String()
-				dialog.ShowInformation("Success", message, win)
+				// message := "Successfully generate the invitation UUID: \n" + invitationUUID.String()
+				// dialog.ShowInformation("Success", message, win)
+				// 创建可复制的标签
+				label := widget.NewLabelWithStyle("Successfully generate the invitation UUID:\n"+invitationUUID.String(), fyne.TextAlignCenter, fyne.TextStyle{Monospace: true})
+
+				// 创建复制按钮
+				copyButton := widget.NewButton("Copy", func() {
+					clipboard.WriteAll(invitationUUID.String())
+				})
+				container := container.New(layout.NewVBoxLayout(), label, copyButton)
+				// 创建对话框并显示
+				dialog.ShowCustom("Success", "Close", container, win)
+
 			}
 			filename.SetText("")
 			username.SetText("")

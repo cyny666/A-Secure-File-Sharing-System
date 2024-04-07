@@ -141,22 +141,3 @@ func RemoveFromTree(Children []*TreeNode, Value uuid.UUID) []*TreeNode {
 
 	return result
 }
-
-func DFS(root *TreeNode, target uuid.UUID) *TreeNode {
-	// 如果当前节点为nil，返回nil
-	if root == nil {
-		return nil
-	}
-	// 如果当前节点的值匹配目标值，返回当前节点
-	if root.Value == target {
-		return root
-	}
-	// 递归地在当前节点的子节点中搜索
-	for _, child := range root.Children {
-		if result := DFS(child, target); result != nil {
-			return result
-		}
-	}
-	// 如果在子节点中未找到匹配的节点，则返回nil
-	return nil
-}
