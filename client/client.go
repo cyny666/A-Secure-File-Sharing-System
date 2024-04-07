@@ -108,9 +108,8 @@ func someUsefulThings() {
 // (e.g. like the Username attribute) and methods (e.g. like the StoreFile method below).
 // 这里来定义一下结构体
 type TreeNode struct {
-	Value    uuid.UUID
-	Children []*TreeNode
-	Friend   []uuid.UUID
+	Value  uuid.UUID
+	Friend []uuid.UUID
 }
 type User struct {
 	Username string
@@ -153,6 +152,7 @@ type KeyFile struct {
 // 文件分享结构体，键值为filename+文件拥有者UUID,为了与文件存贮位置区分开
 type Invitationfile struct {
 	InvitationID   uuid.UUID //分享验证码
+	Filename       string    //分享的文件
 	Password       string
 	InvitationTree *TreeNode
 	SymKeyFile     []byte
@@ -398,14 +398,27 @@ func (userdata *User) CreateInvitation(filename string, recipientUsername string
 	}
 	//创建邀请码
 	invitationPtr = uuid.New()
+	invitationStr := invitationPtr.String()
+	invitationBytes, err := invitationPtr.MarshalBinary()
+	if err != nil {
+		fmt.Println("Error encoding UUID to bytes:", err)
+		return
+	}
+	//存储验证码
+	invitationPtrFind, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename + recipientUsername))[:16])
+	if err != nil {
+		return uuid.Nil, err
+	}
+	userlib.DatastoreSet(invitationPtrFind, invitationBytes)
 	//创建Invitationfile
 	var invitationdata Invitationfile
 	//生成Invitationfile的ID
-	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(invitationStr))[:16])
 	if err != nil {
 		return uuid.Nil, err
 	}
 	invitationdata.InvitationID = invitationPtr
+	invitationdata.Filename = filename
 	invitationdata.Password = userdata.Password
 	// 创建分享树
 	root := &TreeNode{}
@@ -431,15 +444,6 @@ func (userdata *User) AcceptInvitation(senderUsername string, invitationPtr uuid
 	if _, ok := userlib.DatastoreGet(senderUsernameUUID); ok != true {
 		return errors.New("发出分享的用户不存在")
 	}
-	//生成filename的ID
-	storageKey, err := uuid.FromBytes(userlib.Hash([]byte(senderUsername + filename))[:16])
-	if err != nil {
-		return err
-	}
-	//文件不存在
-	if _, ok := userlib.DatastoreGet(storageKey); ok != true {
-		return errors.New("文件不存在")
-	}
 	//生成接收者UUID
 	hashrecipientUsername := userlib.Hash([]byte(userdata.Username))
 	recipientUsernameUUID, err := uuid.FromBytes(hashrecipientUsername[:16])
@@ -448,7 +452,8 @@ func (userdata *User) AcceptInvitation(senderUsername string, invitationPtr uuid
 	}
 	//找到Invitationfile
 	//生成Invitationfile的ID
-	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + senderUsername))[:16])
+	invitationStr := invitationPtr.String()
+	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(invitationStr))[:16])
 	if err != nil {
 		return err
 	}
@@ -466,19 +471,17 @@ func (userdata *User) AcceptInvitation(senderUsername string, invitationPtr uuid
 	if invitationPtr != Invitationfiledata.InvitationID {
 		return errors.New("分享验证码错误或分享已被撤销")
 	}
-	//如果recipientUsernameUUID在Friend中，加入到Children
 	if Contains(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID) {
-		recipientUserTree := &TreeNode{}
-		recipientUserTree.Value = recipientUsernameUUID
-		Invitationfiledata.InvitationTree.Children = append(Invitationfiledata.InvitationTree.Children, recipientUserTree)
+		//下载文件
+		ownuser, err := GetUser(senderUsername, Invitationfiledata.Password)
+		if err != nil {
+			return err
+		}
+		contents, _ := ownuser.LoadFile(Invitationfiledata.Filename)
+		userdata.StoreFile(filename, contents)
+		return nil
 	}
-	//将更改的数据存储到数据库
-	invitationdataBytes, err := json.Marshal(Invitationfiledata)
-	if err != nil {
-		return errors.New("无法把Invitationfile转为byte流")
-	}
-	userlib.DatastoreSet(InvitationIDdata, invitationdataBytes)
-	return nil
+	return errors.New("您没有访问权限")
 }
 
 func (userdata *User) RevokeAccess(filename string, recipientUsername string) error {
@@ -506,8 +509,19 @@ func (userdata *User) RevokeAccess(filename string, recipientUsername string) er
 		return errors.New("撤销邀请的用户不存在")
 	}
 	//找到Invitationfile
+	invitationPtrFind, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username + filename + recipientUsername))[:16])
+	if err != nil {
+		return err
+	}
+	invitationBytes, _ := userlib.DatastoreGet(invitationPtrFind)
+	var invitationPtr uuid.UUID
+	err = invitationPtr.UnmarshalBinary(invitationBytes)
+	if err != nil {
+		return err
+	}
 	//生成Invitationfile的ID
-	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + userdata.Username))[:16])
+	invitationStr := invitationPtr.String()
+	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(string(invitationStr)))[:16])
 	if err != nil {
 		return err
 	}
@@ -522,10 +536,8 @@ func (userdata *User) RevokeAccess(filename string, recipientUsername string) er
 	if err_Marshal != nil {
 		return err_Marshal
 	}
-	//将分享验证码置零，Friend，Children数组剔除接收者
-	Invitationfiledata.InvitationID = uuid.UUID{}
+	//Friend数组剔除接收者
 	Invitationfiledata.InvitationTree.Friend = RemoveFromSlice(Invitationfiledata.InvitationTree.Friend, recipientUsernameUUID)
-	Invitationfiledata.InvitationTree.Children = RemoveFromTree(Invitationfiledata.InvitationTree.Children, recipientUsernameUUID)
 	//将更改的数据存储到数据库
 	invitationdataBytes, err := json.Marshal(Invitationfiledata)
 	if err != nil {
@@ -533,46 +545,4 @@ func (userdata *User) RevokeAccess(filename string, recipientUsername string) er
 	}
 	userlib.DatastoreSet(InvitationIDdata, invitationdataBytes)
 	return nil
-}
-
-func (userdata *User) LoadOthersFile(filename string, ownername string) (content []byte, err error) {
-	//找到Invitationfile
-	//生成Invitationfile的ID
-	InvitationIDdata, err := uuid.FromBytes(userlib.Hash([]byte(filename + ownername))[:16])
-	if err != nil {
-		return nil, err
-	}
-	//索引
-	InvitationfileJSON, ok := userlib.DatastoreGet(InvitationIDdata)
-	if ok != true {
-		return nil, errors.New("您没有访问权限")
-	}
-	//导出
-	var Invitationfiledata Invitationfile
-	err_Marshal := json.Unmarshal(InvitationfileJSON, &Invitationfiledata)
-	if err_Marshal != nil {
-		return nil, err_Marshal
-	}
-	//生成UUID
-	ownernameUUID, err := uuid.FromBytes(userlib.Hash([]byte(ownername))[:16])
-	if err != nil {
-		return nil, err
-	}
-	userdataUUID, err := uuid.FromBytes(userlib.Hash([]byte(userdata.Username))[:16])
-	if err != nil {
-		return nil, err
-	}
-	if ownernameUUID != Invitationfiledata.InvitationTree.Value {
-		return nil, errors.New("文件拥有者错误")
-	}
-	foundNode := DFS(Invitationfiledata.InvitationTree, userdataUUID)
-	if foundNode == nil {
-		return nil, errors.New("您没有访问权限")
-	}
-	ownuser, err := GetUser(ownername, Invitationfiledata.Password)
-	if err != nil {
-		return nil, err
-	}
-	contents, _ := ownuser.LoadFile(filename)
-	return contents, err
 }
