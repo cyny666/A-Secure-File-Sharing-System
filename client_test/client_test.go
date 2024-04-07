@@ -63,6 +63,7 @@ var _ = Describe("Client Tests", func() {
 	bobFile := "bobFile.txt"
 	charlesFile := "charlesFile.txt"
 	bobFile2 := "bobFile2.txt"
+	charlesFile2 := "charlesFile2.txt"
 
 	BeforeEach(func() {
 		// This runs before each test within this Describe block (including nested tests).
@@ -180,7 +181,6 @@ var _ = Describe("Client Tests", func() {
 			alice.StoreFile(aliceFile, []byte(contentOne))
 
 			userlib.DebugMsg("Alice creating invite for Bob for file %s, and Bob accepting invite under name %s.", aliceFile, bobFile)
-
 			invite, err := alice.CreateInvitation(aliceFile, "bob")
 			Expect(err).To(BeNil())
 
@@ -226,6 +226,10 @@ var _ = Describe("Client Tests", func() {
 			userlib.DebugMsg("Checking that Bob cannot accept the invitation.")
 			err = bob.AcceptInvitation("alice", invite, bobFile2)
 			Expect(err).ToNot(BeNil())
+
+			userlib.DebugMsg("Checking that Charles can accept Bob's invitation.")
+			err = charles.AcceptInvitation("bob", invite, charlesFile2)
+			Expect(err).To(BeNil())
 		})
 
 	})
