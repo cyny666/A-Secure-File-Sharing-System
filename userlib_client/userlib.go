@@ -194,12 +194,12 @@ func datastoreDelete(key UUID) {
 	// TODO
 	// 序列化
 	postData, err := json.Marshal(key)
-	if err!=nil {
-		log.Println("Error json.Marshal: "+err.Error())
+	if err != nil {
+		log.Println("Error json.Marshal: " + err.Error())
 	}
 	err = sendPostRequest_noRespData("datastoreDelete", postData)
-	if err!=nil {
-		log.Println("Error sendPostRequest_noRespData: "+err.Error())
+	if err != nil {
+		log.Println("Error sendPostRequest_noRespData: " + err.Error())
 	}
 	// datastoreShard := getDatastoreShard()
 	// delete(datastoreShard, key)
@@ -209,10 +209,19 @@ var DatastoreDelete = datastoreDelete
 
 // Use this in testing to reset the datastore to empty
 func datastoreClear() {
-	datastoreShard := getDatastoreShard()
-	for k := range datastoreShard {
-		delete(datastoreShard, k)
+
+	var empty []byte
+	_, err := sendPostRequest("datastoreDeleteAll", empty)
+
+	if err != nil {
+		log.Println("error sendPostRequest: " + err.Error())
+		return
 	}
+
+	// datastoreShard := getDatastoreShard()
+	// for k := range datastoreShard {
+	// 	delete(datastoreShard, k)
+	// }
 }
 
 var DatastoreClear = datastoreClear
@@ -230,10 +239,18 @@ func DatastoreGetBandwidth() int {
 
 // Use this in testing to reset the keystore to empty
 func keystoreClear() {
-	keystoreShard := getKeystoreShard()
-	for k := range keystoreShard {
-		delete(keystoreShard, k)
+	var empty []byte
+	_, err := sendPostRequest("keystoreDeleteAll", empty)
+
+	if err != nil {
+		log.Println("error sendPostRequest: " + err.Error())
+		return
 	}
+
+	// keystoreShard := getKeystoreShard()
+	// for k := range keystoreShard {
+	// 	delete(keystoreShard, k)
+	// }
 }
 
 var KeystoreClear = keystoreClear
@@ -644,7 +661,7 @@ func MapKeyFromBytes(data []byte) (truncated string) {
 }
 
 func sendPostRequest(url string, postData []byte) ([]byte, error) {
-	urlPrefix := "http://8.130.8.68:8080/"
+	urlPrefix := "http://8.130.23.239:8080/"
 	// 创建一个字节缓冲区，用于存储 POST 数据
 	buffer := bytes.NewBuffer(postData)
 

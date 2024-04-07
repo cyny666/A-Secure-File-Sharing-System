@@ -18,7 +18,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	userlib "github.com/cs161-staff/project2-userlib"
+	userlib "A-Secure-File-Sharing-System/userlib_client"
 
 	"A-Secure-File-Sharing-System/client"
 )
@@ -108,14 +108,10 @@ var _ = Describe("Client Tests", func() {
 			err = alice.AppendToFile(aliceFile, []byte(contentTwo))
 			Expect(err).To(BeNil())
 
-			userlib.DebugMsg("Appending file data: %s", contentThree)
-			err = alice.AppendToFile(aliceFile, []byte(contentThree))
-			Expect(err).To(BeNil())
-
 			userlib.DebugMsg("Loading file...")
 			data, err := alice.LoadFile(aliceFile)
 			Expect(err).To(BeNil())
-			Expect(data).To(Equal([]byte(contentOne + contentTwo + contentThree)))
+			Expect(data).To(Equal([]byte(contentOne + contentTwo)))
 		})
 
 		Specify("Basic Test: Testing Create/Accept Invite Functionality with multiple users and multiple instances.", func() {

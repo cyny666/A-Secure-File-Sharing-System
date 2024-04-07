@@ -20,7 +20,7 @@ package client
 import (
 	"testing"
 
-	userlib "github.com/cs161-staff/project2-userlib"
+	userlib "A-Secure-File-Sharing-System/userlib_client"
 
 	_ "encoding/hex"
 
